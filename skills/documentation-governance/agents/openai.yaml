@@ -1,0 +1,4 @@
+interface:
+  display_name: "Documentation Governance"
+  short_description: "Govern current-state and historical project docs"
+  default_prompt: "Use $documentation-governance to review and synchronize this project's documentation."

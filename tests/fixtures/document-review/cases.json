@@ -1,0 +1,32 @@
+[
+  {
+    "id": "current-readme-retired-option",
+    "document": "current/README-retired-option.md",
+    "document_class": "current-state",
+    "expected_action": "revise-and-relocate-history"
+  },
+  {
+    "id": "adr-superseded-option",
+    "document": "history/adr-superseded-option.md",
+    "document_class": "historical-decision",
+    "expected_action": "allow"
+  },
+  {
+    "id": "current-readme-current-architecture",
+    "document": "current/README-current-architecture.md",
+    "document_class": "current-state",
+    "expected_action": "allow"
+  },
+  {
+    "id": "current-security-prohibition",
+    "document": "current/SECURITY.md",
+    "document_class": "current-state",
+    "expected_action": "allow"
+  },
+  {
+    "id": "migration-old-version-context",
+    "document": "history/migration-v3.md",
+    "document_class": "migration-history",
+    "expected_action": "allow"
+  }
+]
