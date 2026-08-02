@@ -1,0 +1,50 @@
+{
+  "schema_version": 1,
+  "mode": "gate",
+  "scope": {
+    "root": ".",
+    "repositories": [
+      "."
+    ],
+    "write_authorized": false,
+    "authorized_write_paths": []
+  },
+  "sources": [
+    {
+      "id": "acceptance-owner",
+      "plane": "evidence",
+      "location": "tests/acceptance",
+      "authority": "declared",
+      "status": "defined-not-run"
+    }
+  ],
+  "mismatches": [
+    {
+      "id": "missing-runtime-evidence",
+      "classification": "insufficient-evidence",
+      "status": "open",
+      "gate_blocking": false,
+      "summary": "The required acceptance check cannot run in the available environment.",
+      "source_ids": [
+        "acceptance-owner"
+      ]
+    }
+  ],
+  "actions": [],
+  "verifications": [
+    {
+      "id": "acceptance-check",
+      "required": true,
+      "status": "blocked",
+      "scope": "User-visible acceptance behavior.",
+      "evidence": "The declared runner is unavailable in the isolated environment.",
+      "source_ids": [
+        "acceptance-owner"
+      ]
+    }
+  ],
+  "gate": {
+    "requested": true,
+    "decision": "blocked"
+  }
+}

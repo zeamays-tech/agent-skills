@@ -1,0 +1,59 @@
+{
+  "schema_version": 1,
+  "mode": "gate",
+  "scope": {
+    "root": ".",
+    "repositories": [
+      "."
+    ],
+    "write_authorized": false,
+    "authorized_write_paths": []
+  },
+  "sources": [
+    {
+      "id": "accepted-contract",
+      "plane": "intended",
+      "location": "docs/requirements.md",
+      "authority": "declared",
+      "status": "accepted"
+    },
+    {
+      "id": "runtime-contract",
+      "plane": "executable",
+      "location": "schema/service.json",
+      "authority": "declared",
+      "status": "validated-actual"
+    }
+  ],
+  "mismatches": [
+    {
+      "id": "contract-conflict",
+      "classification": "source-conflict",
+      "status": "open",
+      "gate_blocking": true,
+      "summary": "Accepted intent and validated executable behavior define incompatible values.",
+      "source_ids": [
+        "accepted-contract",
+        "runtime-contract"
+      ]
+    }
+  ],
+  "actions": [],
+  "verifications": [
+    {
+      "id": "contract-comparison",
+      "required": true,
+      "status": "passed",
+      "scope": "Compare accepted and executable contract values.",
+      "evidence": "The repository-declared comparison completed and confirmed the mismatch.",
+      "source_ids": [
+        "accepted-contract",
+        "runtime-contract"
+      ]
+    }
+  ],
+  "gate": {
+    "requested": true,
+    "decision": "fail"
+  }
+}

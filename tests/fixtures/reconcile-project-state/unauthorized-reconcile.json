@@ -1,0 +1,59 @@
+{
+  "schema_version": 1,
+  "mode": "reconcile",
+  "scope": {
+    "root": ".",
+    "repositories": [
+      "service-a",
+      "service-b"
+    ],
+    "write_authorized": true,
+    "authorized_write_paths": [
+      "service-a/"
+    ]
+  },
+  "sources": [
+    {
+      "id": "shared-contract",
+      "plane": "intended",
+      "location": "service-a/docs/contract.md",
+      "authority": "declared",
+      "status": "accepted"
+    }
+  ],
+  "mismatches": [
+    {
+      "id": "consumer-drift",
+      "classification": "executable-drift",
+      "status": "open",
+      "gate_blocking": true,
+      "summary": "A consumer contract differs from the accepted shared contract.",
+      "source_ids": [
+        "shared-contract"
+      ]
+    }
+  ],
+  "actions": [
+    {
+      "id": "edit-consumer",
+      "target": "service-b/schema/consumer.json",
+      "status": "applied",
+      "mismatch_ids": [
+        "consumer-drift"
+      ]
+    }
+  ],
+  "verifications": [
+    {
+      "id": "consumer-check",
+      "required": false,
+      "status": "unverified",
+      "scope": "Out-of-scope consumer behavior.",
+      "evidence": "No authorized consumer change or validation exists."
+    }
+  ],
+  "gate": {
+    "requested": false,
+    "decision": "not-assessed"
+  }
+}

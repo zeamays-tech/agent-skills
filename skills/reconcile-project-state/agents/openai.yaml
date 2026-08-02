@@ -1,0 +1,4 @@
+interface:
+  display_name: "Reconcile Project State"
+  short_description: "Align intent, execution, and verification evidence"
+  default_prompt: "Use $reconcile-project-state to audit the current changes across intent, implementation, and verification evidence."

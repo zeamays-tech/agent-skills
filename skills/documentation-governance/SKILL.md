@@ -1,11 +1,19 @@
 ---
 name: documentation-governance
-description: Govern creation, modification, review, and synchronization of software project documentation. Use when working on READMEs, requirements or PRDs, architecture or HLDs, design documents, runbooks, ADRs, migration guides, changelogs, repository instructions, external-source citations, or post-deployment verification; especially when separating current state from decision history, resolving authority or ownership, or keeping related documents aligned.
+description: Govern creation, modification, review, and synchronization of software project documentation. Use when working on READMEs, requirements or PRDs, architecture or HLDs, design documents, runbooks, ADRs, migration guides, changelogs, repository instructions, external-source citations, post-deployment verification, or consumer-repository instructions that invoke this Skill; especially when separating current state from decision history, resolving authority or ownership, or keeping related documents aligned.
 ---
 
 # Documentation Governance
 
 Keep operational guidance trustworthy while preserving useful decision history in the documents designed to hold it.
+
+## Invoke explicitly
+
+Use a direct named invocation when deterministic activation matters:
+
+```text
+Use $documentation-governance to review and synchronize the current project documentation.
+```
 
 ## Load the relevant guidance
 
@@ -14,6 +22,7 @@ Keep operational guidance trustworthy while preserving useful decision history i
 - Read [decisions and migrations](references/decisions-and-migrations.md) for ADRs, changelogs, deprecations, replacements, migrations, or retired behavior.
 - Read [source citation](references/source-citation.md) when external material informs a claim, constraint, recommendation, or compatibility statement.
 - Read [post-deployment verification](references/post-deployment-verification.md) when local, mocked, sandboxed, or offline checks cannot establish deployed behavior.
+- Read [consumer integration](references/consumer-integration.md) when invoking the Skill explicitly or configuring durable triggers in a consumer repository's `AGENTS.md`.
 
 ## Follow the workflow
 

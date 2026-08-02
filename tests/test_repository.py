@@ -1,11 +1,14 @@
 import json
 import re
+import shlex
+import subprocess
 import unittest
 from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1]
 SKILL = ROOT / "skills" / "documentation-governance"
+RELEASE_SCRIPT = ROOT / "scripts" / "release.sh"
 
 
 def read_frontmatter(path: Path):
@@ -24,17 +27,41 @@ def read_frontmatter(path: Path):
 
 
 def public_text_files():
-    roots = [ROOT / "README.md", ROOT / "AGENTS.md", ROOT / "docs", ROOT / "skills", ROOT / "tests"]
+    roots = [
+        ROOT / "README.md",
+        ROOT / "AGENTS.md",
+        ROOT / "docs",
+        ROOT / "scripts",
+        ROOT / "skills",
+        ROOT / "tests",
+    ]
     for root in roots:
         if root.is_file():
             yield root
             continue
         for path in root.rglob("*"):
-            if path.is_file() and path.suffix.lower() in {".md", ".json", ".py", ".yaml", ".yml"}:
+            if path.is_file() and path.suffix.lower() in {
+                ".md",
+                ".json",
+                ".py",
+                ".sh",
+                ".yaml",
+                ".yml",
+            }:
                 yield path
 
 
 class RepositoryTests(unittest.TestCase):
+    def test_agents_requires_full_worktree_commit_recommendation(self):
+        guidance = (ROOT / "AGENTS.md").read_text(encoding="utf-8")
+        for requirement in (
+            "staged changes, unstaged changes, and untracked files",
+            "exactly one commit message",
+            "Conventional Commits 1.0.0",
+            "all uncommitted repository changes",
+        ):
+            self.assertIn(requirement, guidance)
+
     def test_apache_license_configuration(self):
         license_text = (ROOT / "LICENSE").read_text(encoding="utf-8")
         self.assertIn("Apache License\n                           Version 2.0, January 2004", license_text)
@@ -70,6 +97,25 @@ class RepositoryTests(unittest.TestCase):
         self.assertEqual(len(references), len(set(references)))
         for reference in references:
             self.assertTrue((SKILL / reference).is_file(), reference)
+
+    def test_installed_skills_carry_consumer_integration_guidance(self):
+        for skill_name in ("documentation-governance", "reconcile-project-state"):
+            skill = ROOT / "skills" / skill_name
+            skill_text = (skill / "SKILL.md").read_text(encoding="utf-8")
+            reference = "references/consumer-integration.md"
+            self.assertIn(reference, skill_text)
+            integration = (skill / reference).read_text(encoding="utf-8")
+            self.assertIn(f"${skill_name}", integration)
+            self.assertIn("AGENTS.md", integration)
+            self.assertIn("## Invoke explicitly", integration)
+
+        readme = (ROOT / "README.md").read_text(encoding="utf-8")
+        agents = (ROOT / "AGENTS.md").read_text(encoding="utf-8")
+        for skill_name in ("documentation-governance", "reconcile-project-state"):
+            self.assertIn(
+                f"skills/{skill_name}/references/consumer-integration.md", readme
+            )
+        self.assertIn("installed-Skill invocation", agents)
 
     def test_skill_has_no_extraneous_or_product_manifest_files(self):
         forbidden_names = {"readme.md", "changelog.md", "installation_guide.md"}
@@ -118,6 +164,97 @@ class RepositoryTests(unittest.TestCase):
             document = manifest_path.parent / case["document"]
             self.assertTrue(document.is_file(), document)
             self.assertGreater(len(document.read_text(encoding="utf-8").strip()), 40)
+
+    def test_release_script_is_executable_and_has_valid_shell_syntax(self):
+        self.assertTrue(RELEASE_SCRIPT.is_file())
+        self.assertNotEqual(0, RELEASE_SCRIPT.stat().st_mode & 0o111)
+        result = subprocess.run(
+            ["bash", "-n", str(RELEASE_SCRIPT)],
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+        self.assertEqual(0, result.returncode, result.stderr)
+
+    def test_release_script_validates_semver_tags(self):
+        script = shlex.quote(str(RELEASE_SCRIPT))
+        valid_tags = ("v0.1.0", "v1.2.3", "v2.0.0-rc.1", "v3.4.5+build.7")
+        invalid_tags = (
+            "1.2.3",
+            "v01.2.3",
+            "v1.02.3",
+            "v1.2",
+            "v1.2.3-01",
+            "latest",
+        )
+
+        for tag in valid_tags:
+            result = subprocess.run(
+                ["bash", "-c", f"source {script}; validate_release_tag {shlex.quote(tag)}"],
+                check=False,
+                capture_output=True,
+                text=True,
+            )
+            self.assertEqual(0, result.returncode, (tag, result.stderr))
+
+        for tag in invalid_tags:
+            result = subprocess.run(
+                ["bash", "-c", f"source {script}; validate_release_tag {shlex.quote(tag)}"],
+                check=False,
+                capture_output=True,
+                text=True,
+            )
+            self.assertNotEqual(0, result.returncode, tag)
+
+    def test_release_script_suggests_the_next_release_tag(self):
+        script = shlex.quote(str(RELEASE_SCRIPT))
+        cases = {
+            "": "v0.1.0",
+            "v0.1.0": "v0.1.1",
+            "v1.2.3": "v1.2.4",
+            "v2.0.0-rc.1": "v2.0.0",
+            "v3.4.5+build.7": "v3.4.6",
+        }
+
+        for current, expected in cases.items():
+            command = f"source {script}; suggest_next_release_tag {shlex.quote(current)}"
+            result = subprocess.run(
+                ["bash", "-c", command],
+                check=False,
+                capture_output=True,
+                text=True,
+            )
+            self.assertEqual(0, result.returncode, (current, result.stderr))
+            self.assertEqual(expected, result.stdout.strip())
+
+    def test_release_script_uses_guarded_github_release_flow(self):
+        text = RELEASE_SCRIPT.read_text(encoding="utf-8")
+        for required in (
+            "git tag -a",
+            "git push",
+            "gh release create",
+            "--generate-notes",
+            "--verify-tag",
+            "--fail-on-no-commits",
+            "Interactive release setup",
+            "Release title",
+            "Release mode",
+        ):
+            self.assertIn(required, text)
+
+        readme = (ROOT / "README.md").read_text(encoding="utf-8")
+        self.assertNotIn("--skill documentation-governance", readme)
+        self.assertNotIn("Use $documentation-governance", readme)
+        self.assertIn('skill_name="replace-with-skill-name"', readme)
+        for documented_behavior in (
+            "next patch for a stable version",
+            "corresponding stable version for a prerelease",
+            "Bash",
+            "`basename`, `mktemp`, and `rm`",
+            "`NPM_CONFIG_CACHE` or `npm_config_cache`",
+            "otherwise, it creates an isolated temporary npm cache",
+        ):
+            self.assertIn(documented_behavior, readme)
 
 
 if __name__ == "__main__":

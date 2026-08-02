@@ -1,0 +1,47 @@
+{
+  "schema_version": 1,
+  "mode": "gate",
+  "scope": {
+    "root": ".",
+    "repositories": [
+      "."
+    ],
+    "write_authorized": false,
+    "authorized_write_paths": []
+  },
+  "sources": [
+    {
+      "id": "accepted-behavior",
+      "plane": "intended",
+      "location": "docs/requirements.md",
+      "authority": "declared",
+      "status": "accepted"
+    },
+    {
+      "id": "acceptance-result",
+      "plane": "evidence",
+      "location": "artifacts/acceptance-result.json",
+      "authority": "supporting",
+      "status": "passed"
+    }
+  ],
+  "mismatches": [],
+  "actions": [],
+  "verifications": [
+    {
+      "id": "required-acceptance",
+      "required": true,
+      "status": "passed",
+      "scope": "Accepted user-visible behavior for the recorded revision.",
+      "evidence": "The declared acceptance command exited successfully and produced the referenced result.",
+      "source_ids": [
+        "accepted-behavior",
+        "acceptance-result"
+      ]
+    }
+  ],
+  "gate": {
+    "requested": true,
+    "decision": "pass"
+  }
+}

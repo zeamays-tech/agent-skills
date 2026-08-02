@@ -11,7 +11,8 @@ Maintain open, versioned, and portable Agent Skills for AI coding agents. Keep e
 ## Sources of truth
 
 - Treat `skills/<skill-name>/` as the published source for that Skill.
-- Keep current installation and usage guidance in the root `README.md`.
+- Keep repository-level installation, version selection, and catalog guidance in the root `README.md`.
+- Keep installed-Skill invocation and consumer `AGENTS.md` integration guidance in `SKILL.md` or a directly linked file under `references/`.
 - Keep durable repository decisions in `docs/decisions/`.
 - Use Git tags and GitHub Releases for SemVer versions; do not add version fields to Skill frontmatter.
 - Treat repository-local ownership or document maps as authoritative when they are added later.
@@ -40,6 +41,10 @@ Maintain open, versioned, and portable Agent Skills for AI coding agents. Keep e
 - Keep rejected, superseded, retired, and migration history in ADRs, migration records, release notes, or changelogs.
 - Allow prohibitive language for security, privacy, permissions, compliance, compatibility, and operational safety.
 - Classify content by document purpose, path, status, and semantics; never reject text from a single keyword.
+
+## Completion handoff
+
+- After any AI-authored repository change, inspect the complete uncommitted state, including staged changes, unstaged changes, and untracked files, then recommend exactly one commit message in the completion response: a concise single line that follows [Conventional Commits 1.0.0](https://www.conventionalcommits.org/en/v1.0.0/) in the form `<type>[optional scope]: <description>` and summarizes all uncommitted repository changes.
 
 ## Validation
 
