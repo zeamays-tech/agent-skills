@@ -9,7 +9,7 @@ Describe the observable desired state directly:
 - State what the user can accomplish and what the system provides.
 - State scope, preconditions, outcomes, and measurable acceptance behavior.
 - Replace rejected alternatives with the selected outcome in current requirements.
-- Put option history and tradeoff rationale in an ADR or design-review record.
+- Put deliberately evaluated option history and tradeoff rationale in an ADR or design-review record when the decision is durable enough to preserve; discard never-accepted drafting errors.
 
 Do not apply a blanket ban on negative wording. Retain prohibitions when they define a meaningful boundary, and name the protected property or risk when it is not obvious:
 
@@ -20,6 +20,14 @@ Do not apply a blanket ban on negative wording. Retain prohibitions when they de
 - Operational safety: a rollout must not proceed while a health gate fails.
 
 Rewrite a negative product aspiration such as "do not make users repeat setup" as an observable outcome such as "preserve completed setup across sessions."
+
+## Separate outcomes from means
+
+For each candidate requirement, ask whether it states what must be observable or how the system should produce it. Apply an implementation-substitution test: if a different mechanism could satisfy the same behavior, keep the behavior as the requirement and move the mechanism to the appropriate design artifact.
+
+Do not promote an agent's inferred design choice, a rejected implementation, or a convenient current technology into a requirement. Treat a technology-specific prescription or prohibition as a requirement only when the user or repository has accepted it as a fixed constraint, or when it protects a security, privacy, permission, compliance, compatibility, or operational boundary.
+
+For example, "authorized operators can change the active endpoint and subsequent requests use it without restarting the service" is an observable requirement. A database, control command, cache policy, or prohibition on startup-only configuration describes possible implementation choices.
 
 ## Keep PRDs focused
 

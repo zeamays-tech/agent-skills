@@ -5,11 +5,22 @@ Classify before editing so readers can tell what is valid now and what explains 
 ## Classification order
 
 1. Apply an explicit repository document map or local instruction when one exists.
-2. Read the document's stated purpose, audience, status, headings, and surrounding content.
-3. Classify the claim by semantics: current instruction, durable rationale, completed event, or active transition.
-4. Use the filename and path as corroborating evidence, never as the only evidence.
-5. Classify individual sections separately when a document legitimately serves more than one purpose.
-6. Report ambiguity instead of moving or deleting material when the repository gives no defensible answer.
+2. Establish whether the material was accepted, released, deployed, deliberately evaluated, or never accepted.
+3. Read the document's stated purpose, audience, status, headings, and surrounding content.
+4. Classify the claim by semantics: current instruction, durable rationale, completed event, active transition, or unaccepted work.
+5. Use the filename and path as corroborating evidence, never as the only evidence.
+6. Classify individual sections separately when a document legitimately serves more than one purpose.
+7. Report ambiguity instead of moving or deleting material when the repository gives no defensible answer.
+
+## Unaccepted working material
+
+A draft, speculative alternative, or erroneous implementation does not become project history merely because it appeared in a working tree or change set. When authority confirms that it was never accepted, released, deployed, or deliberately retained by repository policy:
+
+- Remove its descriptions and other material whose only purpose is to support or explain it.
+- Do not create an ADR, changelog entry, tombstone, or check solely to record its rejection or prove its absence.
+- Preserve and rewrite only content that has an independent current requirement or valid historical authority.
+
+If its status is unclear, or it affected an external contract, persisted data, compatibility, security, compliance, or operations, report the ambiguity before deleting it and determine whether decision or migration history is required.
 
 ## Current-state documents
 

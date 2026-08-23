@@ -27,17 +27,18 @@ Use $documentation-governance to review and synchronize the current project docu
 ## Follow the workflow
 
 1. Discover repository rules before editing. Read every applicable `AGENTS.md` and any repository-provided ownership, document map, or governance configuration. Inspect related code, tests, schemas, configuration, and current changes without overwriting unrelated work.
-2. Classify each affected document and, when necessary, each section as current-state, historical/decision, or transitional/verification. Use declared repository policy first, then document purpose and semantics, with the path as supporting evidence. Never classify from one keyword alone.
+2. Classify each affected document and, when necessary, each section as current-state, historical/decision, or transitional/verification. Before treating rejected material as history, establish whether it was deliberately considered, accepted, released, deployed, or required by repository policy; otherwise treat it as unaccepted work. Use declared repository policy first, then document purpose and semantics, with the path as supporting evidence. Never classify from one keyword alone.
 3. Identify the authoritative source and owner for every material claim. Surface conflicts instead of silently choosing whichever source is easiest to edit.
-4. Edit current-state documents to describe only the currently valid product, architecture, contract, and operating procedure. Keep rejected, replaced, and retired approaches in ADRs, migration records, release notes, or changelogs. Leave a concise link from current guidance only when readers need the history to act safely.
-5. Express requirements as observable desired outcomes. Preserve prohibitions when they define security, privacy, permission, compliance, compatibility, or operational risk boundaries. Judge wording by purpose, not grammatical polarity.
+4. Edit current-state documents to describe only the currently valid product, architecture, contract, and operating procedure. Preserve rejected, replaced, and retired approaches only when they belong to deliberate or repository-required decision, migration, or release history. Remove never-accepted drafts and erroneous work instead of creating a historical explanation for them. Leave a concise link from current guidance only when readers need valid history to act safely.
+5. Express requirements as observable desired outcomes and separate them from implementation means. If another implementation can satisfy the same outcome, keep the mechanism in design material rather than promoting it to a requirement. Preserve prohibitions when they define security, privacy, permission, compliance, compatibility, or operational risk boundaries. Judge wording by purpose, not grammatical polarity.
 6. Synchronize all affected owner documents, links, examples, tests, generated references, and verification records. Summarize executable contracts instead of copying values that will drift from code, schemas, configuration, or generated API specifications.
 7. Validate the result. Re-read the edited documents in their intended reader flow, inspect the diff, verify links and citations, run relevant repository checks, and record any deployed-environment checks that remain.
 
 ## Enforce these invariants
 
 - Treat current guidance as a view of the valid state, not as a narrative of how the project arrived there.
-- Preserve decision rationale and superseded alternatives in historical records where future readers can interpret their status.
+- Preserve rationale and superseded alternatives for accepted or repository-required decisions where future readers can interpret their status.
+- Do not turn never-accepted agent output or erroneous work into a tombstone, decision record, or check whose only purpose is proving that the work is absent.
 - Allow necessary old-version details in migration material and necessary prohibitions in boundary constraints.
 - Keep PRD intent separate from HLD implementation boundaries while maintaining traceability between them.
 - Cite external authority in the project document that relies on it, not only in the agent response.

@@ -63,6 +63,7 @@ Treat helper output as inventory, not semantic authority. Discover project facts
 - Distinguish accepted intent from drafts and actual behavior from validated behavior.
 - Surface conflicting authorities and request a decision instead of silently normalizing one to another.
 - Keep historical and decision records distinct from current-state guidance by composing with `documentation-governance`.
+- Preserve accepted or repository-required history, but treat confirmed never-accepted work as repair material rather than history; in `reconcile`, remove its in-scope sole-purpose artifacts without tombstones or absence-only checks.
 - Never fabricate evidence, production access, command results, owners, manifests, or gate criteria.
 - Do not interact with a deployed environment without the required user and repository authorization.
 

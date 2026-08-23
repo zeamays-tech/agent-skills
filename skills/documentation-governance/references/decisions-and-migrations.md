@@ -14,7 +14,7 @@ Record at least:
 - Consequences, risks, and follow-up work.
 - Links to superseded or superseding records when applicable.
 
-Keep rejected and superseded approaches in the ADR with clear status. Do not delete the historical rationale merely because the current architecture changed.
+Keep rejected alternatives in an ADR only when they were deliberately evaluated as part of the recorded decision. Preserve superseded accepted decisions with clear status. A never-accepted draft or erroneous proposal is not decision history: remove it without creating or amending an ADR merely to memorialize its rejection.
 
 ## Keep ADRs out of current instructions
 
@@ -44,9 +44,10 @@ Do not use a changelog as the only owner of a current requirement, architecture 
 
 For every reference to a rejected, replaced, deprecated, removed, or retired item, ask:
 
-1. Does the reader need this history to act now?
-2. Is this document designed to preserve history?
-3. Is the status and time scope explicit?
-4. Is there a current owner document that must also change?
+1. Was the item accepted, released, deployed, or deliberately evaluated in a decision process that the repository preserves?
+2. Does the reader need this history to act now?
+3. Is this document designed to preserve history?
+4. Is the status and time scope explicit?
+5. Is there a current owner document that must also change?
 
-Relocate or condense the statement when the answers do not support its current placement.
+If the first answer is no, remove the item and any explanation whose only purpose is its rejection. Otherwise relocate or condense the statement when the remaining answers do not support its current placement.

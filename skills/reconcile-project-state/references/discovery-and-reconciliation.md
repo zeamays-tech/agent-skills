@@ -51,10 +51,21 @@ Then:
 3. Update direct executable producers and consumers inside scope.
 4. Add or update verification that demonstrates the accepted behavior at the affected boundaries.
 5. Synchronize current guidance, generated references, examples, migrations, and acceptance records inside scope. Load `documentation-governance` for documentation changes.
-6. Preserve decision history in the repository's historical layer instead of rewriting it as though it never happened.
+6. Preserve accepted or repository-required decision history in the repository's historical layer instead of rewriting it as though it never happened.
 7. Re-run affected validation from each owning repository and inspect the final diff for unrelated changes.
 
 Do not create a cross-language auto-rewriter or mechanically normalize contracts based on one selected file. Semantic reconciliation requires confirmed authority and consumer-aware changes.
+
+## Remove confirmed unaccepted work cleanly
+
+Apply this boundary only in `reconcile` mode when the user or repository authority confirms that the work was never accepted, released, or deployed and explicitly requests its removal. Treat the work as an error in the current change set, not as decision history.
+
+- Remove in-scope code, documentation, configuration, schemas, migrations, tests, fixtures, examples, comments, and other artifacts whose only authority or purpose came from that work.
+- Do not replace them with a rejection explanation, tombstone, ADR, changelog entry, or test whose only assertion is that the work is absent. Keep such a test only when absence is itself an accepted security, compatibility, compliance, or operational contract.
+- Retain artifacts that have an independent accepted purpose, rewriting them to remove the rejected assumption.
+- Search for names, identifiers, synonyms, and derived concepts after removal; report any residual and its independent authority.
+
+Do not rewrite Git history. If the work may have been accepted, released, deployed, persisted, exposed through an external contract, or relied on for compatibility or safety, stop clean removal and determine the required retirement or migration path.
 
 ## Coordinate multiple repositories
 
