@@ -1,7 +1,10 @@
 import json
+import os
 import re
 import shlex
+import shutil
 import subprocess
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -206,26 +209,176 @@ class RepositoryTests(unittest.TestCase):
             )
             self.assertNotEqual(0, result.returncode, tag)
 
-    def test_release_script_suggests_the_next_release_tag(self):
+    def test_release_reads_version_file(self):
         script = shlex.quote(str(RELEASE_SCRIPT))
         cases = {
-            "": "v0.1.0",
-            "v0.1.0": "v0.1.1",
-            "v1.2.3": "v1.2.4",
-            "v2.0.0-rc.1": "v2.0.0",
-            "v3.4.5+build.7": "v3.4.6",
+            "1.2.3\n": "v1.2.3",
+            "2.0.0-rc.1+build.7\n": "v2.0.0-rc.1+build.7",
+            "v1.2.3\n": None,
+            "01.2.3\n": None,
+            "1.2.3\n2.0.0\n": None,
+            "1.2.3 \n": None,
+            "": None,
+            None: None,
         }
+        for content, expected in cases.items():
+            with self.subTest(content=content), tempfile.TemporaryDirectory() as directory:
+                if content is not None:
+                    (Path(directory) / "VERSION").write_text(content)
+                result = subprocess.run(
+                    ["bash", "-c", f"source {script}; read_release_tag"],
+                    cwd=directory, capture_output=True, text=True, check=False,
+                )
+                if expected is None:
+                    self.assertNotEqual(0, result.returncode, result.stdout)
+                else:
+                    self.assertEqual(0, result.returncode, result.stderr)
+                    self.assertEqual(expected, result.stdout.strip())
 
-        for current, expected in cases.items():
-            command = f"source {script}; suggest_next_release_tag {shlex.quote(current)}"
-            result = subprocess.run(
-                ["bash", "-c", command],
-                check=False,
-                capture_output=True,
-                text=True,
+        version = (ROOT / "VERSION").read_text().strip()
+        result = subprocess.run(
+            ["bash", "-c", f"source {script}; read_release_tag"],
+            cwd=ROOT, capture_output=True, text=True, check=False,
+        )
+        self.assertEqual(0, result.returncode, result.stderr)
+        self.assertEqual(f"v{version}", result.stdout.strip())
+    def test_release_upgrade_choices_and_semver_precedence(self):
+        script = shlex.quote(str(RELEASE_SCRIPT))
+        cases = [
+            ('next_release_tag v1.2.9 major', 0, 'v2.0.0'),
+            ('next_release_tag v1.2.9 minor', 0, 'v1.3.0'),
+            ('next_release_tag v1.2.9 patch', 0, 'v1.2.10'),
+            ('next_release_tag v1.2.9-rc.1+build.7 patch', 0, 'v1.2.10'),
+            ('next_release_tag v1.2.9 v2.0.0', 1, ''),
+            ('release_not_older v1.2.10 v1.2.9', 0, ''),
+            ('release_not_older v1.2.9 v1.2.10', 1, ''),
+            ('release_not_older v1.2.3 v1.3.0', 1, ''),
+            ('release_not_older v1.9.9 v2.0.0', 1, ''),
+            ('release_not_older v1.0.0-rc.1 v1.0.0', 1, ''),
+            ('release_not_older v1.0.0 v1.0.0-rc.1', 0, ''),
+            ('release_not_older v1.0.0-beta.11 v1.0.0-beta.2', 0, ''),
+            ('release_not_older v1.0.0-alpha v1.0.0-alpha.1', 1, ''),
+            ('release_not_older v1.0.0-1 v1.0.0-alpha', 1, ''),
+            ('release_not_older v1.0.0+one v1.0.0+two', 0, ''),
+        ]
+        for command, code, output in cases:
+            with self.subTest(command=command):
+                result = subprocess.run(
+                    ['bash', '-c', f'source {script}; {command}'],
+                    capture_output=True, text=True, check=False,
+                )
+                self.assertEqual(code, result.returncode, result.stderr)
+                self.assertEqual(output, result.stdout.strip())
+
+    def test_release_interaction_dry_run_and_failed_publication_retry(self):
+        # Real local Git; external validation and remote calls are isolated stubs.
+        with tempfile.TemporaryDirectory() as directory:
+            base = Path(directory)
+            repository = base / 'repository'
+            repository.mkdir()
+            binary = base / 'bin'
+            binary.mkdir()
+            log = base / 'calls'
+            real_git = shutil.which('git')
+            environment = dict(os.environ, GIT_CONFIG_GLOBAL=os.devnull,
+                               GIT_CONFIG_SYSTEM=os.devnull, CALL_LOG=str(log),
+                               PYTHONDONTWRITEBYTECODE='1')
+
+            def git(*args):
+                return subprocess.check_output(
+                    [real_git, *args], cwd=repository, env=environment, text=True,
+                    stderr=subprocess.DEVNULL,
+                ).strip()
+
+            git('init')
+            git('checkout', '-b', 'main')
+            git('config', 'user.name', 'Fixture Maintainer')
+            git('config', 'user.email', 'fixture@example.com')
+            (repository / 'VERSION').write_text('1.2.3\n')
+            git('add', 'VERSION')
+            git('commit', '-m', 'Initial release')
+            git('tag', 'v1.2.3')
+            (repository / 'tests').mkdir()
+            (repository / 'tests' / 'test_version.py').write_text(
+                'import unittest\nfrom pathlib import Path\n'
+                'class VersionTest(unittest.TestCase):\n'
+                '    def test_version(self):\n'
+                '        self.assertEqual(3, len(Path("VERSION").read_text().strip().split(".")))\n'
             )
-            self.assertEqual(0, result.returncode, (current, result.stderr))
-            self.assertEqual(expected, result.stdout.strip())
+            (repository / 'change.txt').write_text('Ready for release\n')
+            git('add', 'change.txt', 'tests')
+            git('commit', '-m', 'Prepare release')
+            git('remote', 'add', 'origin', 'https://github.com/example/skills.git')
+            git('update-ref', 'refs/remotes/origin/main', 'HEAD')
+            initial_head = git('rev-parse', 'HEAD')
+            commands = {
+                'git': '#!/bin/bash\ncase "$1" in\n'
+                       'fetch|push) echo "git $*" >> "$CALL_LOG"; exit 0;;\n'
+                       f'esac\nexec {shlex.quote(real_git)} "$@"\n',
+                'npx': '#!/bin/bash\nexit 0\n',
+                'gh': '#!/bin/bash\necho "gh $*" >> "$CALL_LOG"\n'
+                      'case "$*" in\n'
+                      '"auth status "*) exit 0;;\n'
+                      '"repo view "*) echo main;;\n'
+                      '"release view --repo "*) echo v1.2.3;;\n'
+                      '*"--json url"*) echo https://example.com/release;;\n'
+                      '"release create "*) exit "${FAIL_RELEASE:-0}";;\n'
+                      '*) exit 1;;\nesac\n',
+            }
+            for name, content in commands.items():
+                command = binary / name
+                command.write_text(content)
+                command.chmod(0o755)
+            environment['PATH'] = str(binary) + os.pathsep + os.environ['PATH']
+
+            def release(*args, input='', fail='0'):
+                return subprocess.run(
+                    ['bash', str(RELEASE_SCRIPT), *args], cwd=repository,
+                    env=dict(environment, FAIL_RELEASE=fail), input=input,
+                    capture_output=True, text=True, check=False,
+                )
+
+            result = release('v1.2.4')
+            self.assertNotEqual(0, result.returncode)
+            self.assertIn('custom versions are not accepted', result.stderr)
+            self.assertFalse(log.exists())
+            result = release(input='1.2.4\n\n \nPatch release\n1\n')
+            self.assertEqual(0, result.returncode, result.stderr)
+            self.assertIn('Current version (VERSION): 1.2.3', result.stderr)
+            self.assertIn('1) major -> v2.0.0', result.stderr)
+            self.assertIn('2) minor -> v1.3.0', result.stderr)
+            self.assertIn('3) patch -> v1.2.4', result.stderr)
+            self.assertIn('custom versions are not accepted', result.stderr)
+            self.assertIn('Release title must not be blank', result.stderr)
+            self.assertIn('1.2.3 -> 1.2.4', result.stdout)
+            self.assertEqual(initial_head, git('rev-parse', 'HEAD'))
+            self.assertEqual('1.2.3\n', (repository / 'VERSION').read_text())
+            self.assertEqual('v1.2.3', git('tag', '--list'))
+            self.assertNotIn('git push', log.read_text())
+            self.assertNotIn('gh release create', log.read_text())
+
+            git('tag', 'v2.0.0')
+            result = release('--dry-run', '--title', 'Patch', 'patch')
+            self.assertNotEqual(0, result.returncode)
+            self.assertIn('older than existing tag v2.0.0', result.stderr)
+            git('tag', '-d', 'v2.0.0')
+            result = release('--publish', '--title', 'Patch', 'patch')
+            self.assertNotEqual(0, result.returncode)
+            self.assertEqual(initial_head, git('rev-parse', 'HEAD'))
+            self.assertEqual('1.2.3\n', (repository / 'VERSION').read_text())
+
+            result = release('--publish', '--yes', '--title', 'Patch', 'patch', fail='1')
+            self.assertNotEqual(0, result.returncode)
+            version_head = git('rev-parse', 'HEAD')
+            self.assertNotEqual(initial_head, version_head)
+            self.assertEqual('1.2.4\n', (repository / 'VERSION').read_text())
+            self.assertEqual('VERSION', git('diff-tree', '--no-commit-id', '--name-only', '-r', 'HEAD'))
+            self.assertEqual(version_head, git('rev-list', '-n', '1', 'v1.2.4'))
+            result = release('--retry', '--publish', '--yes', '--title', 'Patch')
+            self.assertEqual(0, result.returncode, result.stderr)
+            self.assertEqual(version_head, git('rev-parse', 'HEAD'))
+            self.assertEqual('', git('status', '--porcelain'))
+            self.assertIn('Published https://example.com/release', result.stdout)
 
     def test_release_script_uses_guarded_github_release_flow(self):
         text = RELEASE_SCRIPT.read_text(encoding="utf-8")
@@ -247,8 +400,6 @@ class RepositoryTests(unittest.TestCase):
         self.assertNotIn("Use $documentation-governance", readme)
         self.assertIn('skill_name="replace-with-skill-name"', readme)
         for documented_behavior in (
-            "next patch for a stable version",
-            "corresponding stable version for a prerelease",
             "Bash",
             "`basename`, `mktemp`, and `rm`",
             "`NPM_CONFIG_CACHE` or `npm_config_cache`",

@@ -16,6 +16,8 @@ Do not claim full verification from a mock or local substitute when the untested
 
 ## Record an actionable check
 
+Use [operational procedures](operational-procedures.md) to structure the check's sequence, branches, recovery, and handoffs.
+
 State:
 
 - What was verified locally and the evidence produced.

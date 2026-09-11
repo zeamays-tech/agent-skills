@@ -82,7 +82,9 @@ Compatible agents may also activate it automatically from the `name` and `descri
 
 ## Versioning
 
-Releases follow [Semantic Versioning](https://semver.org/) through Git tags and GitHub Releases:
+Read the root [VERSION](VERSION) file to find the shared version for all Skills without querying Git tags. It contains one SemVer value without a leading `v`. Between releases it remains at the last release version until a confirmed publishing run updates it; local changes or a prepared version do not prove publication. Git tags and GitHub Releases identify published snapshots. See the [version-file decision](docs/decisions/0003-track-repository-version-in-file.md).
+
+Choose release increments using [Semantic Versioning](https://semver.org/):
 
 - Patch: clarifications and compatible guidance fixes.
 - Minor: compatible capabilities, references, or workflows.
@@ -92,24 +94,46 @@ Skill frontmatter intentionally has no version field. Installers and consumers s
 
 ## Release
 
-After committing release-ready changes, start the interactive release dialogue. When the latest GitHub Release has a valid SemVer tag, the script suggests the next patch for a stable version or the corresponding stable version for a prerelease; otherwise, it suggests `v0.1.0`. It then asks for the release tag, Release title, and dry-run or publishing mode:
+Run the following sequence from the repository root:
+
+| Step | Entry point | Completion signal | Next step |
+| --- | --- | --- | --- |
+| Prepare | Commit release-ready changes with authorization; leave version selection to the script | The working tree is clean on the GitHub default branch | Validate |
+| Validate | Run the command below, choose major/minor/patch and enter a title, and select dry run | Validation succeeds and the displayed version/commit plan matches the intended release | Publish; on failure, stop, repair, commit any fixes, and retry Validate |
+| Publish | Rerun with the same upgrade level and title, select publish, and confirm the version commit and publication with authorization | The script reports the published Release URL | Complete; on failure, use the [release recovery guidance](#release-recovery) |
+
+The script displays the current [VERSION](VERSION) and previews the results of major, minor, and patch upgrades. Choose a level (default: patch), enter a nonblank Release title, then choose dry-run or publishing mode. Custom versions are not accepted; invalid choices and blank titles are prompted again:
 
 ```bash
 ./scripts/release.sh
 ```
 
-Dry run is the default interactive mode. It performs preflight checks and validation but does not create a tag, push, or create a GitHub Release. Select publish only after reviewing a successful dry run. The publishing run requires a clean checkout on the GitHub default branch, pushes that branch, creates and pushes an annotated tag at `HEAD`, and creates a Release with generated notes.
+Dry run is the default mode. It validates and displays the plan without changing `VERSION`, committing, tagging, pushing, or creating a Release. Select publish after a successful dry run. After confirmation, a changed version is written to `VERSION` and committed alone as `chore(release): v<version>`. The script then pushes the default branch, creates and pushes an annotated tag at the resulting `HEAD`, and creates the Release. An unchanged version creates no extra commit.
+
+Major increments the major component and resets minor/patch; minor increments minor and resets patch; patch increments patch. Each choice produces a higher stable version, removing any previous prerelease/build suffix.
+
+Version precedence follows [SemVer 2.0.0](https://semver.org/#spec-item-11) (accessed 2026-09-11), including prerelease identifiers and ignoring build metadata. A version must not be older than `VERSION` or any fetched SemVer tag. The recovery-only `--retry` option uses the current `VERSION` without an increment or custom input. An existing GitHub Release is never overwritten.
 
 The script requires Bash, standard Unix utilities including `basename`, `mktemp`, and `rm`, plus `git`, an authenticated [GitHub CLI](https://cli.github.com/manual/gh_auth_status), `python3`, and `npx`. The open-format check uses `NPM_CONFIG_CACHE` or `npm_config_cache` when configured; otherwise, it creates an isolated temporary npm cache. It does not add a repository dependency. The script uses `--verify-tag` so GitHub will not silently create a tag at another commit; these options follow the current [`gh release create` manual](https://cli.github.com/manual/gh_release_create) (accessed 2026-08-02).
 
-For automation, provide the same information as arguments:
+For automation, provide the upgrade level, title, and mode as arguments. Version numbers are not accepted as arguments:
 
 ```bash
-./scripts/release.sh --dry-run --title "Release title" v1.2.3
-./scripts/release.sh --publish --yes --title "Release title" v1.2.3
+./scripts/release.sh --dry-run --title "Release title" patch
+./scripts/release.sh --publish --yes --title "Release title" patch
 ```
 
-Use `--yes` only for an intentional non-interactive release. If tag publication succeeds but Release creation fails, resolve the external error and rerun the same command; the script accepts an existing tag only when it still points to `HEAD`.
+Use `--yes` only to authorize the displayed version update, version commit, and publication without a final interactive confirmation.
+
+### Release recovery
+
+Stop after any publishing failure; completed local or remote steps are not automatically undone.
+
+| Failure point | Recovery from the repository root | Resume and completion |
+| --- | --- | --- |
+| Writing or committing `VERSION` | Repair the local error and inspect the diff; with authorization, finish the version commit and restore a clean working tree | Run `./scripts/release.sh --retry` and enter the same title after completing the version commit; complete when the Release URL is reported |
+| Push, tag, or Release creation after the version commit | Resolve the external error without changing `HEAD` or `VERSION` | Run `./scripts/release.sh --retry` and enter the same title; an existing tag is accepted only at `HEAD`, and no extra version commit is created |
+| Release already exists | Verify the existing Release; do not overwrite or move its tag | If publication succeeded, complete; otherwise decide whether a new version is required |
 
 ## License
 

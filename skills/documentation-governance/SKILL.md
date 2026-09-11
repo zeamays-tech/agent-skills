@@ -19,6 +19,7 @@ Use $documentation-governance to review and synchronize the current project docu
 
 - Always read [document layers](references/document-layers.md) and [authority and synchronization](references/authority-and-sync.md).
 - Read [requirements and design](references/requirements-and-design.md) for PRDs, requirements, HLDs, design documents, acceptance criteria, or repository guidance.
+- Read [operational procedures](references/operational-procedures.md) for initialization, deployment, release, recovery, or acceptance procedures in runbooks and READMEs.
 - Read [decisions and migrations](references/decisions-and-migrations.md) for ADRs, changelogs, deprecations, replacements, migrations, or retired behavior.
 - Read [source citation](references/source-citation.md) when external material informs a claim, constraint, recommendation, or compatibility statement.
 - Read [post-deployment verification](references/post-deployment-verification.md) when local, mocked, sandboxed, or offline checks cannot establish deployed behavior.

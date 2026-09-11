@@ -13,21 +13,22 @@ usage() {
 Usage:
   $SCRIPT_NAME
   $SCRIPT_NAME [--dry-run | --publish] [--title <text>] [--yes]
-               [--remote <name>] [<release-tag>]
+               [--remote <name>] [major | minor | patch | --retry]
 
 Validate and publish a repository-wide SemVer release.
 
-Run without a release tag to enter the interactive release dialogue.
+Show the current version and prompt for an upgrade level, title, and mode.
 
 Arguments:
-  <release-tag>       Optional SemVer tag with a leading "v" (for example,
-                      v1.2.3). When omitted, the script prompts for it.
+  major|minor|patch  Optional upgrade level; otherwise prompt (default: patch).
+                      The new version is calculated from VERSION.
 
 Options:
+  --retry             Resume an unfinished release using VERSION without incrementing.
   --dry-run           Run preflight checks and print publishing commands without
-                      creating a tag, pushing, or creating a GitHub Release.
+                      changing VERSION, committing, tagging, pushing, or creating a Release.
   --publish           Select publishing mode without a mode prompt.
-  --title <text>      Set the GitHub Release title (default: release tag).
+  --title <text>      Set a nonblank GitHub Release title; otherwise prompt.
   --yes               Skip the interactive publishing confirmation.
   --remote <name>     Git remote to publish through (default: origin).
   -h, --help          Show this help text.
@@ -68,51 +69,86 @@ validate_release_tag() {
   fi
 }
 
-suggest_next_release_tag() {
-  local latest_tag="${1:-}"
-  local version core major minor patch
+read_release_tag() {
+  local version
 
-  if ! validate_release_tag "$latest_tag"; then
-    printf 'v0.1.0\n'
-    return 0
-  fi
-
-  version="${latest_tag#v}"
-  version="${version%%+*}"
-  core="${version%%-*}"
-  IFS='.' read -r major minor patch <<<"$core"
-
-  if [[ "$version" == *-* ]]; then
-    printf 'v%s.%s.%s\n' "$major" "$minor" "$patch"
-    return 0
-  fi
-
-  printf 'v%s.%s.%s\n' "$major" "$minor" "$((patch + 1))"
+  [[ -f VERSION ]] || die "Missing VERSION file at repository root"
+  version="$(<VERSION)"
+  validate_release_tag "v$version" || die "VERSION must contain SemVer without a leading v"
+  printf 'v%s\n' "$version"
 }
 
-prompt_release_tag() {
-  local suggested_tag="$1"
+release_not_older() {
+  validate_release_tag "$1" && validate_release_tag "$2" || return 1
+  python3 - "$1" "$2" <<'PY'
+import sys
+
+
+def precedence(tag):
+    version = tag[1:].split("+", 1)[0]
+    core, separator, prerelease = version.partition("-")
+    identifiers = tuple(
+        (0, int(item)) if item.isdigit() else (1, item)
+        for item in prerelease.split(".")
+    ) if separator else ()
+    return tuple(map(int, core.split("."))), not separator, identifiers
+
+
+sys.exit(0 if precedence(sys.argv[1]) >= precedence(sys.argv[2]) else 1)
+PY
+}
+
+next_release_tag() {
+  validate_release_tag "$1" || return 1
+  case "$2" in major | minor | patch) ;; *) return 1 ;; esac
+  python3 - "$1" "$2" <<'PY'
+import sys
+
+core = sys.argv[1][1:].split("+", 1)[0].split("-", 1)[0]
+parts = list(map(int, core.split(".")))
+index = {"major": 0, "minor": 1, "patch": 2}[sys.argv[2]]
+parts[index] += 1
+parts[index + 1:] = [0] * (2 - index)
+print("v" + ".".join(map(str, parts)))
+PY
+}
+
+prompt_release_bump() {
+  local current_tag="$1"
   local input
 
+  printf 'Upgrade level:\n' >&2
+  printf '  1) major -> %s\n' "$(next_release_tag "$current_tag" major)" >&2
+  printf '  2) minor -> %s\n' "$(next_release_tag "$current_tag" minor)" >&2
+  printf '  3) patch -> %s\n' "$(next_release_tag "$current_tag" patch)" >&2
   while true; do
-    printf 'Release tag [%s]: ' "$suggested_tag" >&2
-    IFS= read -r input || die "Release tag input ended unexpectedly"
-    input="${input:-$suggested_tag}"
-    if validate_release_tag "$input"; then
-      printf '%s\n' "$input"
-      return 0
-    fi
-    printf 'Enter valid SemVer with a leading v (for example, v1.2.3).\n' >&2
+    printf 'Select upgrade [3]: ' >&2
+    IFS= read -r input || die "Upgrade input ended unexpectedly"
+    case "${input:-3}" in
+      1 | major) printf 'major\n'; return 0 ;;
+      2 | minor) printf 'minor\n'; return 0 ;;
+      3 | patch) printf 'patch\n'; return 0 ;;
+      *) printf 'Choose major, minor, or patch; custom versions are not accepted.\n' >&2 ;;
+    esac
   done
 }
 
 prompt_release_title() {
-  local release_tag="$1"
   local input
 
-  printf 'Release title [%s]: ' "$release_tag" >&2
-  IFS= read -r input || die "Release title input ended unexpectedly"
-  printf '%s\n' "${input:-$release_tag}"
+  while true; do
+    printf 'Release title: ' >&2
+    IFS= read -r input || die "Release title input ended unexpectedly"
+    if [[ -n "${input//[[:space:]]/}" ]]; then
+      printf '%s\n' "$input"
+      return 0
+    fi
+    printf 'Release title must not be blank.\n' >&2
+  done
+}
+
+write_release_version() {
+  printf '%s\n' "${1#v}" > VERSION
 }
 
 prompt_release_mode() {
@@ -155,12 +191,13 @@ run_mutation() {
 
 main() {
   local release_tag=""
+  local bump=""
+  local retry=0
   local release_title=""
   local mode_option=""
   local selected_mode=""
-  local interactive=0
   local repository_root remote_url repository_slug branch default_branch head tag_commit answer release_url
-  local latest_release_tag suggested_tag commit_count npm_cache
+  local latest_release_tag version_tag existing_tag commit_count npm_cache
   local tag_exists=0
   local -a release_command
 
@@ -179,6 +216,9 @@ main() {
         release_title="$2"
         shift
         ;;
+      --retry)
+        retry=1
+        ;;
       --yes)
         ASSUME_YES=1
         ;;
@@ -194,30 +234,56 @@ main() {
       -*)
         die "Unknown option: $1"
         ;;
+      major | minor | patch)
+        [[ -z "$bump" ]] || die "Only one upgrade level may be provided"
+        bump="$1"
+        ;;
       *)
-        [[ -z "$release_tag" ]] || die "Only one release tag may be provided"
-        release_tag="$1"
+        die "Choose major, minor, or patch; custom versions are not accepted"
         ;;
     esac
     shift
   done
 
-  if [[ -z "$release_tag" ]]; then
-    interactive=1
-  else
-    validate_release_tag "$release_tag" || die "Release tag must be valid SemVer with a leading v: $release_tag"
-  fi
+  [[ "$retry" == 0 || -z "$bump" ]] || die "--retry cannot be combined with an upgrade level"
   [[ -z "$release_title" || -n "${release_title//[[:space:]]/}" ]] || die "Release title must not be blank"
   [[ "$REMOTE" =~ ^[A-Za-z0-9._-]+$ ]] || die "Invalid remote name: $REMOTE"
 
   require_command git
-  require_command gh
-  require_command python3
-  require_command npx
-  require_command mktemp
-
   repository_root="$(git rev-parse --show-toplevel 2>/dev/null)" || die "Run this script from a Git repository"
   cd "$repository_root"
+
+  require_command python3
+  version_tag="$(read_release_tag)" || exit 1
+  printf '\nInteractive release setup\n' >&2
+  printf 'Current version (VERSION): %s\n' "${version_tag#v}" >&2
+  if ((retry == 1)); then
+    release_tag="$version_tag"
+    printf 'Retrying unfinished release: %s\n' "$release_tag" >&2
+  else
+    if [[ -z "$bump" ]]; then
+      bump="$(prompt_release_bump "$version_tag")"
+    fi
+    release_tag="$(next_release_tag "$version_tag" "$bump")"
+    printf 'New version (%s): %s\n' "$bump" "${release_tag#v}" >&2
+  fi
+  release_not_older "$release_tag" "$version_tag" || die "Release version must not be older than VERSION ($version_tag)"
+  if [[ -z "$release_title" ]]; then
+    release_title="$(prompt_release_title)"
+  fi
+  if [[ -z "$mode_option" ]]; then
+    mode_option="$(prompt_release_mode)"
+  fi
+  selected_mode="$mode_option"
+  if [[ "$selected_mode" == "dry-run" ]]; then
+    DRY_RUN=1
+  else
+    DRY_RUN=0
+  fi
+
+  require_command gh
+  require_command npx
+  require_command mktemp
 
   [[ -z "$(git status --porcelain=v1 --untracked-files=all)" ]] || die "Working tree must be clean before release"
 
@@ -253,32 +319,17 @@ main() {
   head="$(git rev-parse HEAD)"
   latest_release_tag="$(gh release view --repo "$repository_slug" --json tagName --jq '.tagName' 2>/dev/null || true)"
 
-  if ((interactive == 1)); then
-    suggested_tag="$(suggest_next_release_tag "$latest_release_tag")"
-    printf '\nInteractive release setup\n' >&2
-    printf 'Latest release: %s\n' "${latest_release_tag:-none}" >&2
-    release_tag="$(prompt_release_tag "$suggested_tag")"
-    if [[ -z "$release_title" ]]; then
-      release_title="$(prompt_release_title "$release_tag")"
+  printf 'Latest GitHub release: %s\n' "${latest_release_tag:-none}" >&2
+  while IFS= read -r existing_tag; do
+    if validate_release_tag "$existing_tag"; then
+      release_not_older "$release_tag" "$existing_tag" || die "Release version must not be older than existing tag $existing_tag"
     fi
-    if [[ -z "$mode_option" ]]; then
-      mode_option="$(prompt_release_mode)"
-    fi
-  fi
-
-  validate_release_tag "$release_tag" || die "Release tag must be valid SemVer with a leading v: $release_tag"
-  release_title="${release_title:-$release_tag}"
-  [[ -n "${release_title//[[:space:]]/}" ]] || die "Release title must not be blank"
-  selected_mode="${mode_option:-publish}"
-  if [[ "$selected_mode" == "dry-run" ]]; then
-    DRY_RUN=1
-  else
-    DRY_RUN=0
-  fi
+  done < <(git tag --list)
 
   if git show-ref --verify --quiet "refs/tags/$release_tag"; then
     tag_commit="$(git rev-list -n 1 "$release_tag")"
     [[ "$tag_commit" == "$head" ]] || die "Existing tag $release_tag does not point to HEAD"
+    [[ "$release_tag" == "$version_tag" ]] || die "Existing tag does not match VERSION; cannot change a tagged release"
     tag_exists=1
   fi
 
@@ -307,15 +358,29 @@ main() {
   printf '\nRelease plan\n'
   printf '  Repository: %s\n' "$repository_slug"
   printf '  Branch:     %s\n' "$branch"
-  printf '  Commit:     %s\n' "$head"
+  printf '  Base commit: %s\n' "$head"
+  printf '  VERSION:    %s -> %s\n' "${version_tag#v}" "${release_tag#v}"
+  if [[ "$release_tag" != "$version_tag" ]]; then
+    printf '  Version update: write VERSION and commit chore(release): %s\n' "$release_tag"
+  fi
   printf '  Tag:        %s\n' "$release_tag"
   printf '  Title:      %s\n' "$release_title"
   printf '  Mode:       %s\n' "$([[ "$DRY_RUN" -eq 1 ]] && printf 'dry run' || printf 'publish')"
 
   if ((DRY_RUN == 0 && ASSUME_YES == 0)); then
     [[ -t 0 ]] || die "Interactive confirmation unavailable; rerun with --yes"
-    read -r -p "Publish $release_tag? [y/N] " answer
+    read -r -p "Apply this version/commit plan and publish $release_tag? [y/N] " answer
     [[ "$answer" == "y" || "$answer" == "Y" ]] || die "Release cancelled"
+  fi
+
+  if [[ "$release_tag" != "$version_tag" ]]; then
+    run_mutation write_release_version "$release_tag"
+    run_mutation git add -- VERSION
+    run_mutation git commit -m "chore(release): $release_tag" -- VERSION
+    if ((DRY_RUN == 0)); then
+      [[ "$(read_release_tag)" == "$release_tag" ]] || die "VERSION changed during commit; review before retrying"
+      [[ -z "$(git status --porcelain=v1 --untracked-files=all)" ]] || die "Commit left local changes; review before retrying"
+    fi
   fi
 
   run_mutation git push "$REMOTE" "HEAD:refs/heads/$default_branch"
@@ -338,7 +403,7 @@ main() {
   run_mutation "${release_command[@]}"
 
   if ((DRY_RUN == 1)); then
-    printf '\nDry run complete; no tag, push, or GitHub Release was created.\n'
+    printf '\nDry run complete; VERSION, commits, tags, and GitHub Releases are unchanged; nothing was pushed.\n'
     return 0
   fi
 

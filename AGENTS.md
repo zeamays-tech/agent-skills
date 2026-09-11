@@ -14,7 +14,7 @@ Maintain open, versioned, and portable Agent Skills for AI coding agents. Keep e
 - Keep repository-level installation, version selection, and catalog guidance in the root `README.md`.
 - Keep installed-Skill invocation and consumer `AGENTS.md` integration guidance in `SKILL.md` or a directly linked file under `references/`.
 - Keep durable repository decisions in `docs/decisions/`.
-- Use Git tags and GitHub Releases for SemVer versions; do not add version fields to Skill frontmatter.
+- Keep the shared repository version in root `VERSION` as SemVer without a leading `v`. The release script offers only major/minor/patch upgrades, computes the new version, and, after publishing confirmation, updates and commits only `VERSION` before tagging; release tags must equal `v` plus the committed value. Git tags and GitHub Releases establish publication; do not add version fields to Skill frontmatter.
 - Treat repository-local ownership or document maps as authoritative when they are added later.
 
 ## Skill changes
