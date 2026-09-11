@@ -7,6 +7,7 @@ REMOTE="origin"
 DRY_RUN=0
 ASSUME_YES=0
 TEMP_NPM_CACHE=""
+LOCAL_RELEASE_TAG=""
 
 usage() {
   cat <<EOF
@@ -45,6 +46,10 @@ require_command() {
 }
 
 cleanup() {
+  local exit_code=$?
+  if ((exit_code != 0)) && [[ -n "$LOCAL_RELEASE_TAG" ]]; then
+    printf 'Local release %s (VERSION commit and tag) is retained. Resolve the error, then run %s --retry with the same title.\n' "$LOCAL_RELEASE_TAG" "$SCRIPT_NAME" >&2
+  fi
   if [[ -n "$TEMP_NPM_CACHE" ]]; then
     rm -rf -- "$TEMP_NPM_CACHE"
   fi
@@ -96,6 +101,15 @@ def precedence(tag):
 
 sys.exit(0 if precedence(sys.argv[1]) >= precedence(sys.argv[2]) else 1)
 PY
+}
+
+check_release_tags() {
+  local existing_tag
+  while IFS= read -r existing_tag; do
+    if validate_release_tag "$existing_tag"; then
+      release_not_older "$1" "$existing_tag" || die "Release version must not be older than existing tag $existing_tag"
+    fi
+  done < <(git tag --list)
 }
 
 next_release_tag() {
@@ -197,7 +211,7 @@ main() {
   local mode_option=""
   local selected_mode=""
   local repository_root remote_url repository_slug branch default_branch head tag_commit answer release_url
-  local latest_release_tag version_tag existing_tag commit_count npm_cache
+  local latest_release_tag version_tag commit_count npm_cache
   local tag_exists=0
   local -a release_command
 
@@ -285,6 +299,8 @@ main() {
   require_command npx
   require_command mktemp
 
+  trap cleanup EXIT
+  printf 'Checking working tree...\n' >&2
   [[ -z "$(git status --porcelain=v1 --untracked-files=all)" ]] || die "Working tree must be clean before release"
 
   remote_url="$(git remote get-url "$REMOTE" 2>/dev/null)" || die "Git remote not found: $REMOTE"
@@ -306,25 +322,13 @@ main() {
   repository_slug="${repository_slug%/}"
   [[ "$repository_slug" =~ ^[^/]+/[^/]+$ ]] || die "Could not derive owner/repository from $remote_url"
 
-  gh auth status --hostname github.com >/dev/null
-  default_branch="$(gh repo view "$repository_slug" --json defaultBranchRef --jq '.defaultBranchRef.name')"
-  [[ -n "$default_branch" ]] || die "Could not determine the GitHub default branch"
-
   branch="$(git symbolic-ref --quiet --short HEAD 2>/dev/null)" || die "Releases must be created from a branch, not detached HEAD"
-  [[ "$branch" == "$default_branch" ]] || die "Release from the GitHub default branch ($default_branch), not $branch"
-
-  git fetch "$REMOTE" --tags
-  git merge-base --is-ancestor "$REMOTE/$default_branch" HEAD || die "Local $branch is behind or diverged from $REMOTE/$default_branch"
-
+  default_branch="$(git symbolic-ref --quiet "refs/remotes/$REMOTE/HEAD")" || die "Remote default branch is not cached; run git remote set-head $REMOTE -a while connected, then retry"
+  default_branch="${default_branch#refs/remotes/$REMOTE/}"
+  [[ "$branch" == "$default_branch" ]] || die "Release from the cached default branch ($default_branch), not $branch"
+  git merge-base --is-ancestor "$REMOTE/$default_branch" HEAD || die "Local $branch is behind or diverged from cached $REMOTE/$default_branch"
   head="$(git rev-parse HEAD)"
-  latest_release_tag="$(gh release view --repo "$repository_slug" --json tagName --jq '.tagName' 2>/dev/null || true)"
-
-  printf 'Latest GitHub release: %s\n' "${latest_release_tag:-none}" >&2
-  while IFS= read -r existing_tag; do
-    if validate_release_tag "$existing_tag"; then
-      release_not_older "$release_tag" "$existing_tag" || die "Release version must not be older than existing tag $existing_tag"
-    fi
-  done < <(git tag --list)
+  check_release_tags "$release_tag"
 
   if git show-ref --verify --quiet "refs/tags/$release_tag"; then
     tag_commit="$(git rev-list -n 1 "$release_tag")"
@@ -333,25 +337,14 @@ main() {
     tag_exists=1
   fi
 
-  if gh release view "$release_tag" --repo "$repository_slug" >/dev/null 2>&1; then
-    die "GitHub Release $release_tag already exists; choose a new version"
-  fi
-
-  if [[ -n "$latest_release_tag" ]]; then
-    git show-ref --verify --quiet "refs/tags/$latest_release_tag" || die "Latest release tag is missing locally after fetch: $latest_release_tag"
-    git merge-base --is-ancestor "$latest_release_tag" HEAD || die "Latest release $latest_release_tag is not an ancestor of HEAD"
-    commit_count="$(git rev-list --count "$latest_release_tag..HEAD")"
-    ((commit_count > 0)) || die "No commits exist after the latest release ($latest_release_tag)"
-  fi
-
   printf 'Running repository validation...\n'
   python3 -m unittest discover -s tests -v
   npm_cache="${NPM_CONFIG_CACHE:-${npm_config_cache:-}}"
   if [[ -z "$npm_cache" ]]; then
     TEMP_NPM_CACHE="$(mktemp -d "${TMPDIR:-/tmp}/agent-skills-release-npm.XXXXXX")"
-    trap cleanup EXIT
     npm_cache="$TEMP_NPM_CACHE"
   fi
+  printf 'Validating Skill discovery (npx may download the CLI)...\n' >&2
   npm_config_cache="$npm_cache" npx --yes skills@latest add . --list
   [[ -z "$(git status --porcelain=v1 --untracked-files=all)" ]] || die "Validation changed the working tree; review it before release"
 
@@ -383,10 +376,46 @@ main() {
     fi
   fi
 
-  run_mutation git push "$REMOTE" "HEAD:refs/heads/$default_branch"
   if ((tag_exists == 0)); then
     run_mutation git tag -a "$release_tag" -m "$release_title"
   fi
+
+  if ((DRY_RUN == 1)); then
+    printf '\nDry run complete; local validation passed. VERSION, commits, and tags are unchanged. Remote checks and publication were not run.\n'
+    return 0
+  fi
+
+  LOCAL_RELEASE_TAG="$release_tag"
+  head="$(git rev-parse HEAD)"
+  printf '\nLocal release ready: %s at %s (VERSION commit and tag).\n' "$release_tag" "$head"
+  printf 'Checking GitHub authentication...\n' >&2
+  gh auth status --hostname github.com >/dev/null
+  printf 'Reading GitHub default branch...\n' >&2
+  default_branch="$(gh repo view "$repository_slug" --json defaultBranchRef --jq '.defaultBranchRef.name')"
+  [[ -n "$default_branch" ]] || die "Could not determine the GitHub default branch"
+  [[ "$branch" == "$default_branch" ]] || die "Release from the GitHub default branch ($default_branch), not $branch"
+
+  printf 'Fetching branches and tags from %s...\n' "$REMOTE" >&2
+  git fetch --progress "$REMOTE" --tags
+  git merge-base --is-ancestor "$REMOTE/$default_branch" HEAD || die "Local $branch is behind or diverged from $REMOTE/$default_branch"
+  check_release_tags "$release_tag"
+  printf 'Reading latest GitHub release...\n' >&2
+  latest_release_tag="$(gh release list --repo "$repository_slug" --limit 1 --json tagName --jq '.[0].tagName // ""')"
+  printf 'Latest GitHub release: %s\n' "${latest_release_tag:-none}" >&2
+
+  printf 'Checking whether GitHub Release %s already exists...\n' "$release_tag" >&2
+  if gh release view "$release_tag" --repo "$repository_slug" >/dev/null 2>&1; then
+    die "GitHub Release $release_tag already exists; choose a new version"
+  fi
+
+  if [[ -n "$latest_release_tag" ]]; then
+    git show-ref --verify --quiet "refs/tags/$latest_release_tag" || die "Latest release tag is missing locally after fetch: $latest_release_tag"
+    git merge-base --is-ancestor "$latest_release_tag" HEAD || die "Latest release $latest_release_tag is not an ancestor of HEAD"
+    commit_count="$(git rev-list --count "$latest_release_tag..HEAD")"
+    ((commit_count > 0)) || die "No commits exist after the latest release ($latest_release_tag)"
+  fi
+
+  run_mutation git push "$REMOTE" "HEAD:refs/heads/$default_branch"
   run_mutation git push "$REMOTE" "refs/tags/$release_tag"
 
   release_command=(
@@ -402,12 +431,8 @@ main() {
   fi
   run_mutation "${release_command[@]}"
 
-  if ((DRY_RUN == 1)); then
-    printf '\nDry run complete; VERSION, commits, tags, and GitHub Releases are unchanged; nothing was pushed.\n'
-    return 0
-  fi
-
   release_url="$(gh release view "$release_tag" --repo "$repository_slug" --json url --jq '.url')"
+  LOCAL_RELEASE_TAG=""
   printf '\nPublished %s\n' "$release_url"
 }
 

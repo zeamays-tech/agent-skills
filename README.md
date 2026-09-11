@@ -98,8 +98,8 @@ Run the following sequence from the repository root:
 
 | Step | Entry point | Completion signal | Next step |
 | --- | --- | --- | --- |
-| Prepare | Commit release-ready changes with authorization; leave version selection to the script | The working tree is clean on the GitHub default branch | Validate |
-| Validate | Run the command below, choose major/minor/patch and enter a title, and select dry run | Validation succeeds and the displayed version/commit plan matches the intended release | Publish; on failure, stop, repair, commit any fixes, and retry Validate |
+| Prepare | Commit release-ready changes with authorization; leave version selection to the script | The working tree is clean on the default branch cached in the remote HEAD reference | Validate |
+| Validate | Run the command below, choose major/minor/patch and enter a title, and select dry run | Local validation succeeds and the displayed version/commit/tag plan matches the intended release; remote checks remain pending | Publish; on failure, stop, repair, commit any fixes, and retry Validate |
 | Publish | Rerun with the same upgrade level and title, select publish, and confirm the version commit and publication with authorization | The script reports the published Release URL | Complete; on failure, use the [release recovery guidance](#release-recovery) |
 
 The script displays the current [VERSION](VERSION) and previews the results of major, minor, and patch upgrades. Choose a level (default: patch), enter a nonblank Release title, then choose dry-run or publishing mode. Custom versions are not accepted; invalid choices and blank titles are prompted again:
@@ -108,7 +108,16 @@ The script displays the current [VERSION](VERSION) and previews the results of m
 ./scripts/release.sh
 ```
 
-Dry run is the default mode. It validates and displays the plan without changing `VERSION`, committing, tagging, pushing, or creating a Release. Select publish after a successful dry run. After confirmation, a changed version is written to `VERSION` and committed alone as `chore(release): v<version>`. The script then pushes the default branch, creates and pushes an annotated tag at the resulting `HEAD`, and creates the Release. An unchanged version creates no extra commit.
+Dry run is the default mode. It runs local validation and displays the plan without changing `VERSION`, committing, tagging, or contacting the Git/GitHub remote. Skill discovery may still download its CLI package. Remote readiness is not established by a dry run.
+
+After confirmation in publish mode, the script completes the local release first:
+
+1. Write the calculated version to `VERSION` and create a separate `chore(release): v<version>` commit containing only that file. An unchanged version during retry creates no extra commit.
+2. Create the local annotated tag at the resulting commit.
+3. Check GitHub authentication and the current default branch, fetch branches and tags, and validate remote compatibility.
+4. Push the branch and tag, then create the GitHub Release.
+
+A remote failure preserves the local version commit and tag and prints a `--retry` instruction. Local preparation uses the cached remote HEAD/default branch and cached tags. If the remote HEAD reference is missing, run `git remote set-head origin -a` while connected (substitute a configured remote when needed), then restart preparation. Fresh remote checks may reveal a branch, version, or tag conflict; publication stops rather than overwriting it.
 
 Major increments the major component and resets minor/patch; minor increments minor and resets patch; patch increments patch. Each choice produces a higher stable version, removing any previous prerelease/build suffix.
 
@@ -132,7 +141,8 @@ Stop after any publishing failure; completed local or remote steps are not autom
 | Failure point | Recovery from the repository root | Resume and completion |
 | --- | --- | --- |
 | Writing or committing `VERSION` | Repair the local error and inspect the diff; with authorization, finish the version commit and restore a clean working tree | Run `./scripts/release.sh --retry` and enter the same title after completing the version commit; complete when the Release URL is reported |
-| Push, tag, or Release creation after the version commit | Resolve the external error without changing `HEAD` or `VERSION` | Run `./scripts/release.sh --retry` and enter the same title; an existing tag is accepted only at `HEAD`, and no extra version commit is created |
+| Local tag creation after the version commit | Repair the local Git error without changing the version commit | Run `./scripts/release.sh --retry` to create the missing tag and continue |
+| Authentication, fetch, push, or Release creation after the local tag | Resolve the external error without changing `HEAD`, `VERSION`, or the tag; resolve remote conflicts explicitly before retrying | Run `./scripts/release.sh --retry` and enter the same title; an existing tag is accepted only at `HEAD`, and no extra version commit is created |
 | Release already exists | Verify the existing Release; do not overwrite or move its tag | If publication succeeded, complete; otherwise decide whether a new version is required |
 
 ## License

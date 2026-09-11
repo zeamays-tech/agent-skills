@@ -310,19 +310,21 @@ class RepositoryTests(unittest.TestCase):
             git('commit', '-m', 'Prepare release')
             git('remote', 'add', 'origin', 'https://github.com/example/skills.git')
             git('update-ref', 'refs/remotes/origin/main', 'HEAD')
+            git('symbolic-ref', 'refs/remotes/origin/HEAD', 'refs/remotes/origin/main')
             initial_head = git('rev-parse', 'HEAD')
             commands = {
                 'git': '#!/bin/bash\ncase "$1" in\n'
-                       'fetch|push) echo "git $*" >> "$CALL_LOG"; exit 0;;\n'
+                       'fetch|push) echo "git $*" >> "$CALL_LOG"; '
+                       '[[ "$FAIL_STAGE" == "$1" ]] && exit 1; exit 0;;\n'
                        f'esac\nexec {shlex.quote(real_git)} "$@"\n',
                 'npx': '#!/bin/bash\nexit 0\n',
                 'gh': '#!/bin/bash\necho "gh $*" >> "$CALL_LOG"\n'
                       'case "$*" in\n'
-                      '"auth status "*) exit 0;;\n'
+                      '"auth status "*) [[ "$FAIL_STAGE" == auth ]] && exit 1; exit 0;;\n'
                       '"repo view "*) echo main;;\n'
-                      '"release view --repo "*) echo v1.2.3;;\n'
+                      '"release list --repo "*) echo v1.2.3;;\n'
                       '*"--json url"*) echo https://example.com/release;;\n'
-                      '"release create "*) exit "${FAIL_RELEASE:-0}";;\n'
+                      '"release create "*) [[ "$FAIL_STAGE" == release ]] && exit 1; exit 0;;\n'
                       '*) exit 1;;\nesac\n',
             }
             for name, content in commands.items():
@@ -331,10 +333,10 @@ class RepositoryTests(unittest.TestCase):
                 command.chmod(0o755)
             environment['PATH'] = str(binary) + os.pathsep + os.environ['PATH']
 
-            def release(*args, input='', fail='0'):
+            def release(*args, input='', fail=''):
                 return subprocess.run(
                     ['bash', str(RELEASE_SCRIPT), *args], cwd=repository,
-                    env=dict(environment, FAIL_RELEASE=fail), input=input,
+                    env=dict(environment, FAIL_STAGE=fail), input=input,
                     capture_output=True, text=True, check=False,
                 )
 
@@ -354,8 +356,7 @@ class RepositoryTests(unittest.TestCase):
             self.assertEqual(initial_head, git('rev-parse', 'HEAD'))
             self.assertEqual('1.2.3\n', (repository / 'VERSION').read_text())
             self.assertEqual('v1.2.3', git('tag', '--list'))
-            self.assertNotIn('git push', log.read_text())
-            self.assertNotIn('gh release create', log.read_text())
+            self.assertFalse(log.exists(), 'Dry run must not contact Git or GitHub remotes')
 
             git('tag', 'v2.0.0')
             result = release('--dry-run', '--title', 'Patch', 'patch')
@@ -367,13 +368,24 @@ class RepositoryTests(unittest.TestCase):
             self.assertEqual(initial_head, git('rev-parse', 'HEAD'))
             self.assertEqual('1.2.3\n', (repository / 'VERSION').read_text())
 
-            result = release('--publish', '--yes', '--title', 'Patch', 'patch', fail='1')
+            result = release('--publish', '--yes', '--title', 'Patch', 'patch', fail='auth')
             self.assertNotEqual(0, result.returncode)
+            self.assertIn('Local release v1.2.4 (VERSION commit and tag) is retained', result.stderr)
             version_head = git('rev-parse', 'HEAD')
             self.assertNotEqual(initial_head, version_head)
             self.assertEqual('1.2.4\n', (repository / 'VERSION').read_text())
             self.assertEqual('VERSION', git('diff-tree', '--no-commit-id', '--name-only', '-r', 'HEAD'))
             self.assertEqual(version_head, git('rev-list', '-n', '1', 'v1.2.4'))
+            self.assertEqual('chore(release): v1.2.4', git('log', '-1', '--format=%s'))
+            self.assertEqual('tag', git('cat-file', '-t', 'v1.2.4'))
+            for stage in ('fetch', 'push', 'release'):
+                with self.subTest(failure_stage=stage):
+                    result = release('--retry', '--publish', '--yes', '--title', 'Patch', fail=stage)
+                    self.assertNotEqual(0, result.returncode)
+                    self.assertIn('Local release v1.2.4 (VERSION commit and tag) is retained', result.stderr)
+                    self.assertEqual(version_head, git('rev-parse', 'HEAD'))
+                    self.assertEqual(version_head, git('rev-list', '-n', '1', 'v1.2.4'))
+                    self.assertEqual('1.2.4\n', (repository / 'VERSION').read_text())
             result = release('--retry', '--publish', '--yes', '--title', 'Patch')
             self.assertEqual(0, result.returncode, result.stderr)
             self.assertEqual(version_head, git('rev-parse', 'HEAD'))
