@@ -37,6 +37,7 @@ Use $documentation-governance to review and synchronize the current project docu
 
 ## Enforce these invariants
 
+- Keep procedures action-focused, use short repository-owned script entry points, and require scoped terminal results after all required checks and cleanup; follow the operational-procedures reference for native-tool and manual-action boundaries.
 - Treat current guidance as a view of the valid state, not as a narrative of how the project arrived there.
 - Preserve rationale and superseded alternatives for accepted or repository-required decisions where future readers can interpret their status.
 - Do not turn never-accepted agent output or erroneous work into a tombstone, decision record, or check whose only purpose is proving that the work is absent.
