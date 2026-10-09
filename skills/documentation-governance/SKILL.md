@@ -24,6 +24,7 @@ Use $documentation-governance to review and synchronize the current project docu
 - Read [source citation](references/source-citation.md) when external material informs a claim, constraint, recommendation, or compatibility statement.
 - Read [post-deployment verification](references/post-deployment-verification.md) when local, mocked, sandboxed, or offline checks cannot establish deployed behavior.
 - Read [consumer integration](references/consumer-integration.md) when invoking the Skill explicitly or configuring durable triggers in a consumer repository's `AGENTS.md`.
+- When writing, updating, translating, or reviewing Chinese technical documentation, use `chinese-technical-writing` when installed and applicable. Load it before drafting and apply its guidance throughout writing; otherwise continue this workflow without it. Its use does not expand the authorized editing scope.
 
 ## Follow the workflow
 

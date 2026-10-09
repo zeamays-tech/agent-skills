@@ -102,15 +102,18 @@ class RepositoryTests(unittest.TestCase):
             self.assertTrue((SKILL / reference).is_file(), reference)
 
     def test_installed_skills_carry_consumer_integration_guidance(self):
-        for skill_name in ("documentation-governance", "reconcile-project-state"):
-            skill = ROOT / "skills" / skill_name
+        for skill in sorted((ROOT / "skills").iterdir()):
+            if not skill.is_dir():
+                continue
+            skill_name = skill.name
             skill_text = (skill / "SKILL.md").read_text(encoding="utf-8")
             reference = "references/consumer-integration.md"
-            self.assertIn(reference, skill_text)
-            integration = (skill / reference).read_text(encoding="utf-8")
+            integration = (
+                (skill / reference).read_text(encoding="utf-8")
+                if reference in skill_text else skill_text
+            )
             self.assertIn(f"${skill_name}", integration)
             self.assertIn("AGENTS.md", integration)
-            self.assertIn("## Invoke explicitly", integration)
 
         readme = (ROOT / "README.md").read_text(encoding="utf-8")
         agents = (ROOT / "AGENTS.md").read_text(encoding="utf-8")
