@@ -6,6 +6,7 @@ import shutil
 import subprocess
 import tempfile
 import unittest
+import zipfile
 from pathlib import Path
 
 
@@ -22,6 +23,8 @@ def read_frontmatter(path: Path):
 
     values = {}
     for line in match.group(1).splitlines():
+        if line.startswith(" "):
+            continue
         key, separator, value = line.partition(":")
         if not separator:
             raise AssertionError(f"Invalid frontmatter line in {path}: {line}")
@@ -77,7 +80,7 @@ class RepositoryTests(unittest.TestCase):
 
     def test_skill_frontmatter_and_directory_name(self):
         metadata, _ = read_frontmatter(SKILL / "SKILL.md")
-        self.assertEqual({"name", "description"}, set(metadata))
+        self.assertEqual({"name", "description", "metadata"}, set(metadata))
         self.assertEqual(SKILL.name, metadata["name"])
         self.assertGreater(len(metadata["description"]), 80)
         for trigger in ("READMEs", "PRDs", "ADRs", "runbooks", "migration"):
@@ -212,39 +215,53 @@ class RepositoryTests(unittest.TestCase):
             )
             self.assertNotEqual(0, result.returncode, tag)
 
-    def test_release_reads_version_file(self):
+    def test_release_reads_and_updates_selected_skill_version(self):
         script = shlex.quote(str(RELEASE_SCRIPT))
-        cases = {
-            "1.2.3\n": "v1.2.3",
-            "2.0.0-rc.1+build.7\n": "v2.0.0-rc.1+build.7",
-            "v1.2.3\n": None,
-            "01.2.3\n": None,
-            "1.2.3\n2.0.0\n": None,
-            "1.2.3 \n": None,
-            "": None,
-            None: None,
-        }
-        for content, expected in cases.items():
-            with self.subTest(content=content), tempfile.TemporaryDirectory() as directory:
-                if content is not None:
-                    (Path(directory) / "VERSION").write_text(content)
-                result = subprocess.run(
-                    ["bash", "-c", f"source {script}; read_release_tag"],
-                    cwd=directory, capture_output=True, text=True, check=False,
-                )
-                if expected is None:
-                    self.assertNotEqual(0, result.returncode, result.stdout)
-                else:
+        for version in ('1.2.3', '2.0.0-rc.1+build.7', 'v1.2.3', '01.2.3', '1.2.3 ', '1.2.3\n2.0.0', ''):
+            with self.subTest(version=version), tempfile.TemporaryDirectory() as directory:
+                path = Path(directory) / 'SKILL.md'
+                original = ('---\nname: sample\ndescription: Sample\nmetadata:\n'
+                            f'  version: "{version}"\n  author: Example\n---\nBody\n')
+                path.write_text(original)
+                command = f'source {script}; SKILL_FILE=SKILL.md; read_release_tag'
+                result = subprocess.run(['bash', '-c', command], cwd=directory,
+                                        capture_output=True, text=True)
+                if version in ('1.2.3', '2.0.0-rc.1+build.7'):
                     self.assertEqual(0, result.returncode, result.stderr)
-                    self.assertEqual(expected, result.stdout.strip())
+                    self.assertEqual('v' + version, result.stdout.strip())
+                    result = subprocess.run(
+                        ['bash', '-c', f'source {script}; SKILL_FILE=SKILL.md; write_release_version v3.0.0'],
+                        cwd=directory, capture_output=True, text=True)
+                    self.assertEqual(0, result.returncode, result.stderr)
+                    self.assertEqual(original.replace(f'"{version}"', '"3.0.0"'), path.read_text())
+                else:
+                    self.assertNotEqual(0, result.returncode)
+                    self.assertEqual(original, path.read_text())
 
-        version = (ROOT / "VERSION").read_text().strip()
-        result = subprocess.run(
-            ["bash", "-c", f"source {script}; read_release_tag"],
-            cwd=ROOT, capture_output=True, text=True, check=False,
+        for path in (ROOT / 'skills').glob('*/SKILL.md'):
+            result = subprocess.run(
+                ['bash', '-c', f'source {script}; SKILL_FILE={shlex.quote(str(path))}; read_release_tag'],
+                capture_output=True, text=True)
+            self.assertEqual(0, result.returncode, (path.name, result.stderr))
+
+    def test_version_update_rejects_ambiguous_metadata_without_changing_file(self):
+        helper = ROOT / 'scripts' / 'skill_version.py'
+        headers = (
+            'metadata:\n  version: "1.0.0"\nmetadata: {version: "2.0.0"}\n',
+            'metadata:\n  version: "1.0.0"\n  version: "2.0.0"\n',
+            'metadata:\n  author: Example\n',
+            'version: "1.0.0"\n',
         )
-        self.assertEqual(0, result.returncode, result.stderr)
-        self.assertEqual(f"v{version}", result.stdout.strip())
+        for header in headers:
+            with self.subTest(header=header), tempfile.TemporaryDirectory() as directory:
+                path = Path(directory) / 'SKILL.md'
+                original = '---\nname: sample\n' + header + '---\nBody\n'
+                path.write_text(original)
+                result = subprocess.run(['python3', str(helper), str(path), '1.0.1'],
+                                        capture_output=True, text=True)
+                self.assertNotEqual(0, result.returncode, result.stdout)
+                self.assertEqual(original, path.read_text())
+
     def test_release_upgrade_choices_and_semver_precedence(self):
         script = shlex.quote(str(RELEASE_SCRIPT))
         cases = [
@@ -297,16 +314,26 @@ class RepositoryTests(unittest.TestCase):
             git('checkout', '-b', 'main')
             git('config', 'user.name', 'Fixture Maintainer')
             git('config', 'user.email', 'fixture@example.com')
-            (repository / 'VERSION').write_text('1.2.3\n')
-            git('add', 'VERSION')
+            skill_file = repository / 'skills' / 'sample' / 'SKILL.md'
+            skill_file.parent.mkdir(parents=True)
+            original_skill = '---\nname: sample\ndescription: Example skill\nmetadata:\n  version: "1.2.3"\n---\nBody\n'
+            skill_file.write_text(original_skill)
+            other = repository / 'skills' / 'other' / 'SKILL.md'
+            other.parent.mkdir()
+            other.write_text(original_skill.replace('sample', 'other'))
+            (skill_file.parent / 'references').mkdir()
+            (skill_file.parent / 'references' / 'guide.md').write_text('Example reference\n')
+            git('add', 'skills')
             git('commit', '-m', 'Initial release')
-            git('tag', 'v1.2.3')
+            git('tag', 'sample-v1.2.3')
+            git('tag', 'other-v99.0.0')
+            git('tag', 'v99.0.0')
             (repository / 'tests').mkdir()
             (repository / 'tests' / 'test_version.py').write_text(
                 'import unittest\nfrom pathlib import Path\n'
                 'class VersionTest(unittest.TestCase):\n'
                 '    def test_version(self):\n'
-                '        self.assertEqual(3, len(Path("VERSION").read_text().strip().split(".")))\n'
+                '        self.assertTrue(Path("skills/sample/SKILL.md").is_file())\n'
             )
             (repository / 'change.txt').write_text('Ready for release\n')
             git('add', 'change.txt', 'tests')
@@ -325,9 +352,9 @@ class RepositoryTests(unittest.TestCase):
                       'case "$*" in\n'
                       '"auth status "*) [[ "$FAIL_STAGE" == auth ]] && exit 1; exit 0;;\n'
                       '"repo view "*) echo main;;\n'
-                      '"release list --repo "*) echo v1.2.3;;\n'
                       '*"--json url"*) echo https://example.com/release;;\n'
-                      '"release create "*) [[ "$FAIL_STAGE" == release ]] && exit 1; exit 0;;\n'
+                      '"release create "*) cp "$4" "$CALL_LOG.zip"; [[ "$FAIL_STAGE" == release ]] && exit 1; exit 0;;\n'
+                      '"release view "*) [[ "$FAIL_STAGE" == exists ]] && exit 0; exit 1;;\n'
                       '*) exit 1;;\nesac\n',
             }
             for name, content in commands.items():
@@ -338,7 +365,7 @@ class RepositoryTests(unittest.TestCase):
 
             def release(*args, input='', fail=''):
                 return subprocess.run(
-                    ['bash', str(RELEASE_SCRIPT), *args], cwd=repository,
+                    ['bash', str(RELEASE_SCRIPT), '--skill', 'sample', *args], cwd=repository,
                     env=dict(environment, FAIL_STAGE=fail), input=input,
                     capture_output=True, text=True, check=False,
                 )
@@ -349,7 +376,7 @@ class RepositoryTests(unittest.TestCase):
             self.assertFalse(log.exists())
             result = release(input='1.2.4\n\n \nPatch release\n1\n')
             self.assertEqual(0, result.returncode, result.stderr)
-            self.assertIn('Current version (VERSION): 1.2.3', result.stderr)
+            self.assertIn('Current version (sample): 1.2.3', result.stderr)
             self.assertIn('1) major -> v2.0.0', result.stderr)
             self.assertIn('2) minor -> v1.3.0', result.stderr)
             self.assertIn('3) patch -> v1.2.4', result.stderr)
@@ -357,43 +384,89 @@ class RepositoryTests(unittest.TestCase):
             self.assertIn('Release title must not be blank', result.stderr)
             self.assertIn('1.2.3 -> 1.2.4', result.stdout)
             self.assertEqual(initial_head, git('rev-parse', 'HEAD'))
-            self.assertEqual('1.2.3\n', (repository / 'VERSION').read_text())
-            self.assertEqual('v1.2.3', git('tag', '--list'))
+            self.assertEqual(original_skill, skill_file.read_text())
+            self.assertEqual({'sample-v1.2.3', 'other-v99.0.0', 'v99.0.0'}, set(git('tag', '--list').splitlines()))
             self.assertFalse(log.exists(), 'Dry run must not contact Git or GitHub remotes')
+            result = subprocess.run(
+                ['bash', str(RELEASE_SCRIPT), '--current', '--dry-run', '--title', 'Initial'],
+                cwd=repository, env=dict(environment, FAIL_STAGE=''), input='sample\n',
+                capture_output=True, text=True)
+            self.assertNotEqual(0, result.returncode)
+            self.assertIn('Existing tag sample-v1.2.3 does not point to HEAD', result.stderr)
+            self.assertIn('Skill name:', result.stderr)
+            self.assertEqual(initial_head, git('rev-parse', 'HEAD'))
 
-            git('tag', 'v2.0.0')
+
+            git('tag', 'sample-v2.0.0')
             result = release('--dry-run', '--title', 'Patch', 'patch')
             self.assertNotEqual(0, result.returncode)
-            self.assertIn('older than existing tag v2.0.0', result.stderr)
-            git('tag', '-d', 'v2.0.0')
+            self.assertIn('older than existing tag sample-v2.0.0', result.stderr)
+            git('tag', '-d', 'sample-v2.0.0')
+            divergent = git('commit-tree', 'HEAD^{tree}', '-m', 'Unrelated history')
+            git('tag', 'sample-v1.2.2', divergent)
+            result = release('--dry-run', '--title', 'Patch', 'patch')
+            self.assertNotEqual(0, result.returncode)
+            self.assertIn('not an ancestor', result.stderr)
+            git('tag', '-d', 'sample-v1.2.2')
+
             result = release('--publish', '--title', 'Patch', 'patch')
             self.assertNotEqual(0, result.returncode)
             self.assertEqual(initial_head, git('rev-parse', 'HEAD'))
-            self.assertEqual('1.2.3\n', (repository / 'VERSION').read_text())
+            self.assertEqual(original_skill, skill_file.read_text())
 
             result = release('--publish', '--yes', '--title', 'Patch', 'patch', fail='auth')
             self.assertNotEqual(0, result.returncode)
-            self.assertIn('Local release v1.2.4 (VERSION commit and tag) is retained', result.stderr)
+            self.assertIn('Local release sample-v1.2.4 (Skill version commit and tag) is retained', result.stderr)
             version_head = git('rev-parse', 'HEAD')
             self.assertNotEqual(initial_head, version_head)
-            self.assertEqual('1.2.4\n', (repository / 'VERSION').read_text())
-            self.assertEqual('VERSION', git('diff-tree', '--no-commit-id', '--name-only', '-r', 'HEAD'))
-            self.assertEqual(version_head, git('rev-list', '-n', '1', 'v1.2.4'))
-            self.assertEqual('chore(release): v1.2.4', git('log', '-1', '--format=%s'))
-            self.assertEqual('tag', git('cat-file', '-t', 'v1.2.4'))
+            self.assertEqual(original_skill.replace('1.2.3', '1.2.4'), skill_file.read_text())
+            self.assertEqual(original_skill.replace('sample', 'other'), other.read_text())
+            self.assertEqual('skills/sample/SKILL.md', git('diff-tree', '--no-commit-id', '--name-only', '-r', 'HEAD'))
+            self.assertEqual(version_head, git('rev-list', '-n', '1', 'sample-v1.2.4'))
+            self.assertEqual('chore(release): sample-v1.2.4', git('log', '-1', '--format=%s'))
+            self.assertEqual('tag', git('cat-file', '-t', 'sample-v1.2.4'))
             for stage in ('fetch', 'push', 'release'):
                 with self.subTest(failure_stage=stage):
                     result = release('--retry', '--publish', '--yes', '--title', 'Patch', fail=stage)
                     self.assertNotEqual(0, result.returncode)
-                    self.assertIn('Local release v1.2.4 (VERSION commit and tag) is retained', result.stderr)
+                    self.assertIn('Local release sample-v1.2.4 (Skill version commit and tag) is retained', result.stderr)
                     self.assertEqual(version_head, git('rev-parse', 'HEAD'))
-                    self.assertEqual(version_head, git('rev-list', '-n', '1', 'v1.2.4'))
-                    self.assertEqual('1.2.4\n', (repository / 'VERSION').read_text())
+                    self.assertEqual(version_head, git('rev-list', '-n', '1', 'sample-v1.2.4'))
+                    self.assertEqual(original_skill.replace('1.2.3', '1.2.4'), skill_file.read_text())
+                    self.assertEqual(original_skill.replace('sample', 'other'), other.read_text())
             result = release('--retry', '--publish', '--yes', '--title', 'Patch')
             self.assertEqual(0, result.returncode, result.stderr)
             self.assertEqual(version_head, git('rev-parse', 'HEAD'))
             self.assertEqual('', git('status', '--porcelain'))
             self.assertIn('Published https://example.com/release', result.stdout)
+            with zipfile.ZipFile(str(log) + '.zip') as archive:
+                self.assertIn('sample/SKILL.md', archive.namelist())
+                self.assertEqual(b'Example reference\n', archive.read('sample/references/guide.md'))
+                self.assertTrue(all(name.startswith('sample/') for name in archive.namelist()))
+                self.assertEqual(skill_file.read_text(), archive.read('sample/SKILL.md').decode())
+            self.assertIn('--latest=false', log.read_text())
+            self.assertNotIn('--generate-notes', log.read_text())
+            self.assertIn('/tree/sample-v1.2.4/skills/sample', log.read_text())
+            result = release('--retry', '--publish', '--yes', '--title', 'Patch', fail='exists')
+            self.assertNotEqual(0, result.returncode)
+            self.assertIn('already exists', result.stderr)
+            self.assertEqual(version_head, git('rev-parse', 'HEAD'))
+
+            # A different Skill can publish its current version at the same commit.
+            git('tag', '-d', 'other-v99.0.0')
+            result = release('--skill', 'other', '--current', '--publish', '--yes', '--title', 'Other')
+            self.assertEqual(0, result.returncode, result.stderr)
+            self.assertEqual(version_head, git('rev-parse', 'HEAD'))
+            self.assertEqual(version_head, git('rev-list', '-n', '1', 'other-v1.2.3'))
+            with zipfile.ZipFile(str(log) + '.zip') as archive:
+                self.assertEqual(other.read_text(), archive.read('other/SKILL.md').decode())
+                self.assertTrue(all(name.startswith('other/') for name in archive.namelist()))
+            self.assertNotIn('--prerelease', log.read_text())
+            for skill in ('../sample', 'missing', '-sample'):
+                result = release('--skill', skill, '--current', '--dry-run', '--title', 'Invalid')
+                self.assertNotEqual(0, result.returncode)
+                self.assertEqual(version_head, git('rev-parse', 'HEAD'))
+
 
     def test_release_script_uses_guarded_github_release_flow(self):
         text = RELEASE_SCRIPT.read_text(encoding="utf-8")
@@ -401,9 +474,8 @@ class RepositoryTests(unittest.TestCase):
             "git tag -a",
             "git push",
             "gh release create",
-            "--generate-notes",
+            "--notes",
             "--verify-tag",
-            "--fail-on-no-commits",
             "Interactive release setup",
             "Release title",
             "Release mode",

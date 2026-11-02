@@ -1,6 +1,6 @@
 # Track the Shared Repository Version in a File
 
-- Status: Accepted
+- Status: Superseded by [independent Skill releases](0004-independent-skill-releases.md) on 2026-11-02
 - Date: 2026-09-11
 
 ## Context

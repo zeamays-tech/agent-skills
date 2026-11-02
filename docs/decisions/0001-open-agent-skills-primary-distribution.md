@@ -1,6 +1,6 @@
 # Use an Open Agent Skills Repository as the Primary Distribution Source
 
-- Status: Accepted
+- Status: Accepted; repository-wide versioning superseded by [independent Skill releases](0004-independent-skill-releases.md) on 2026-11-02
 - Date: 2026-07-15
 
 ## Context

@@ -14,13 +14,13 @@ Maintain open, versioned, and portable Agent Skills for AI coding agents. Keep e
 - Keep repository-level installation, version selection, and catalog guidance in the root `README.md`.
 - Keep installed-Skill invocation and consumer `AGENTS.md` integration guidance in `SKILL.md` or a directly linked file under `references/`.
 - Keep durable repository decisions in `docs/decisions/`.
-- Keep the shared repository version in root `VERSION` as SemVer without a leading `v`. The release script offers only major/minor/patch upgrades, computes the new version, and, after publishing confirmation, updates and commits only `VERSION`, then creates the local tag before remote checks or publication; release tags must equal `v` plus the committed value. Git tags and GitHub Releases establish publication; do not add version fields to Skill frontmatter.
+- Keep each Skill version in its `SKILL.md` under `metadata.version` as a quoted SemVer string. Use a block-style `metadata` mapping and two spaces before `version` so release tooling can replace only that value. Publish one Skill at a time with tag `<skill-name>-v<version>` and an archive from that tagged Skill directory. Update and commit only the selected `SKILL.md` during an authorized version increment. Preserve historical tags and releases; a metadata value alone is not proof of publication.
 - Treat repository-local ownership or document maps as authoritative when they are added later.
 
 ## Skill changes
 
 - Read the complete target `SKILL.md` and every reference needed for the change.
-- Keep frontmatter limited to `name` and `description` unless the open specification and repository policy explicitly require otherwise.
+- Use standard frontmatter fields: `name`, `description`, and `metadata` with the required independent `version`. Additional metadata values must be strings and serve an actual consumer need. Keep platform-specific top-level extensions in generated distribution packages.
 - Make the description explain both capability and triggering contexts.
 - Keep `SKILL.md` concise and link directly to focused files under `references/`.
 - Add `scripts/` only for deterministic, repeatable work with controllable error rates. Test every added script.

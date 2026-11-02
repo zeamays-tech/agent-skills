@@ -1,6 +1,8 @@
 ---
 name: reconcile-project-state
 description: Reconcile software project state across accepted requirements, design decisions, current documentation, implementation, schemas, configuration, migrations, tests, acceptance results, and deployment evidence. Use for impact, audit, authorized correction, completion gates, and post-deployment verification when accepted requirements or ADRs change; APIs, events, persistence schemas, configuration, migrations, or other executable contracts change; integrations cross repositories or components; a feature, milestone, merge, or release is about to be declared complete; intended, executable, and evidence state conflict; real deployed behavior must be verified; or a consumer repository needs lifecycle-trigger or explicit-invocation guidance for this Skill. Skip broad reconciliation for spelling or format-only edits, behavior-preserving internal refactors, and unaccepted drafts unless explicitly requested.
+metadata:
+  version: "1.0.0"
 ---
 
 # Reconcile Project State

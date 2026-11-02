@@ -42,11 +42,12 @@ The CLI installs to project scope by default. `--global` makes the Skill availab
 
 ### Install a specific release
 
-Use the direct GitHub tree source documented by the [`skills` CLI source formats](https://github.com/vercel-labs/skills#source-formats), replacing the tag and Skill name. This pins installation to the repository content published by that tag:
+Use the direct GitHub tree source documented by the [`skills` CLI source formats](https://github.com/vercel-labs/skills/blob/main/docs/commands.md#source-formats), replacing the tag and Skill name. This pins installation to the repository content published by that tag:
 
 ```bash
-release_tag="replace-with-release-tag"
 skill_name="replace-with-skill-name"
+skill_version="replace-with-published-version"
+release_tag="${skill_name}-v${skill_version}"
 npx skills add "https://github.com/zeamays-tech/agent-skills/tree/${release_tag}/skills/${skill_name}"
 ```
 
@@ -86,68 +87,77 @@ Compatible agents may also activate it automatically from the `name` and `descri
 
 ## Versioning
 
-Read the root [VERSION](VERSION) file to find the shared version for all Skills without querying Git tags. It contains one SemVer value without a leading `v`. Between releases it remains at the last release version until a confirmed publishing run updates it; local changes or a prepared version do not prove publication. Git tags and GitHub Releases identify published snapshots. See the [version-file decision](docs/decisions/0003-track-repository-version-in-file.md).
+Each Skill has an independent SemVer string in its `SKILL.md` under `metadata.version`. The [Agent Skills metadata specification](https://agentskills.io/specification#metadata-field) permits custom string values; version selection and publication are repository conventions, not automatic installer behavior (accessed 2026-11-02).
 
-Choose release increments using [Semantic Versioning](https://semver.org/):
+Use this canonical YAML layout so the release script can change only the version value without rewriting descriptions or instructions:
 
-- Patch: clarifications and compatible guidance fixes.
-- Minor: compatible capabilities, references, or workflows.
-- Major: breaking changes to Skill behavior, structure, or expected usage.
+```yaml
+metadata:
+  version: "1.0.0"
+```
 
-Skill frontmatter intentionally has no version field. Installers and consumers should use repository tags or release references when reproducibility requires a fixed version.
+Version increments affect only the selected Skill. Read its metadata for the prepared version; a tag and GitHub Release establish publication. Each release tag is `<skill-name>-v<version>`, and its asset is `<skill-name>-v<version>.zip`, containing only that Skill directory. See the [independent-version decision](docs/decisions/0004-independent-skill-releases.md).
+
+Choose increments using [Semantic Versioning](https://semver.org/): patch for compatible fixes, minor for compatible capabilities, and major for breaking behavior or usage changes. The release script offers major/minor/patch, calculates the result, and removes any prerelease/build suffix when incrementing. It compares versions only against tags for the selected Skill. Existing tags and published assets remain immutable.
+
+Install a specific version using the [tagged installation command](#install-a-specific-release). Writing a version in metadata does not create a downloadable release. Previously published repository-wide tags remain usable through their original URLs; use the exact historical tag when installing an old snapshot.
 
 ## Release
 
-Run the following sequence from the repository root:
+Run from the repository root. The script requires Bash, standard Unix utilities including `basename`, `mktemp`, and `rm`, plus `git`, an authenticated [GitHub CLI](https://cli.github.com/manual/gh_auth_status), `python3`, and `npx`. Version editing uses Python's standard library and the canonical metadata layout above; it does not need a YAML dependency.
 
 | Step | Entry point | Completion signal | Next step |
 | --- | --- | --- | --- |
-| Prepare | Commit release-ready changes with authorization; leave version selection to the script | The working tree is clean on the default branch cached in the remote HEAD reference | Validate |
-| Validate | Run the command below, choose major/minor/patch and enter a title, and select dry run | Local validation succeeds and the displayed version/commit/tag plan matches the intended release; remote checks remain pending | Publish; on failure, stop, repair, commit any fixes, and retry Validate |
-| Publish | Rerun with the same upgrade level and title, select publish, and confirm the version commit and publication with authorization | The script reports the published Release URL | Complete; on failure, use the [release recovery guidance](#release-recovery) |
-
-The script displays the current [VERSION](VERSION) and previews the results of major, minor, and patch upgrades. Choose a level (default: patch), enter a nonblank Release title, then choose dry-run or publishing mode. Custom versions are not accepted; invalid choices and blank titles are prompted again:
+| Prepare | With authorization, commit release-ready changes on the cached remote default branch | Working tree is clean and the selected Skill has valid metadata | Validate |
+| Validate | Run the script, select a Skill, upgrade level and title, then choose dry run | Local tests and Skill discovery pass; the displayed Skill, version and tag match the intended release | Publish; on failure, repair, commit with authorization, and retry Validate |
+| Publish | Repeat the same selection in publish mode and confirm | The script reports the Release URL after uploading the selected Skill ZIP | Complete; on failure, follow [release recovery](#release-recovery) |
 
 ```bash
 ./scripts/release.sh
 ```
 
-Dry run is the default mode. It runs local validation and displays the plan without changing `VERSION`, committing, tagging, or contacting the Git/GitHub remote. Skill discovery may still download its CLI package. Remote readiness is not established by a dry run.
+Dry run is the default mode. It leaves Skill files, commits and tags unchanged and does not contact Git/GitHub remotes. Skill discovery may download its CLI package. The discovery command uses `NPM_CONFIG_CACHE` or `npm_config_cache` when configured; otherwise, it creates an isolated temporary npm cache. Temporary archives and caches are cleaned on exit. Local checks do not establish remote readiness.
 
-After confirmation in publish mode, the script completes the local release first:
-
-1. Write the calculated version to `VERSION` and create a separate `chore(release): v<version>` commit containing only that file. An unchanged version during retry creates no extra commit.
-2. Create the local annotated tag at the resulting commit.
-3. Check GitHub authentication and the current default branch, fetch branches and tags, and validate remote compatibility.
-4. Push the branch and tag, then create the GitHub Release.
-
-A remote failure preserves the local version commit and tag and prints a `--retry` instruction. Local preparation uses the cached remote HEAD/default branch and cached tags. If the remote HEAD reference is missing, run `git remote set-head origin -a` while connected (substitute a configured remote when needed), then restart preparation. Fresh remote checks may reveal a branch, version, or tag conflict; publication stops rather than overwriting it.
-
-Major increments the major component and resets minor/patch; minor increments minor and resets patch; patch increments patch. Each choice produces a higher stable version, removing any previous prerelease/build suffix.
-
-Version precedence follows [SemVer 2.0.0](https://semver.org/#spec-item-11) (accessed 2026-09-11), including prerelease identifiers and ignoring build metadata. A version must not be older than `VERSION` or any fetched SemVer tag. The recovery-only `--retry` option uses the current `VERSION` without an increment or custom input. An existing GitHub Release is never overwritten.
-
-The script requires Bash, standard Unix utilities including `basename`, `mktemp`, and `rm`, plus `git`, an authenticated [GitHub CLI](https://cli.github.com/manual/gh_auth_status), `python3`, and `npx`. The open-format check uses `NPM_CONFIG_CACHE` or `npm_config_cache` when configured; otherwise, it creates an isolated temporary npm cache. It does not add a repository dependency. The script uses `--verify-tag` so GitHub will not silently create a tag at another commit; these options follow the current [`gh release create` manual](https://cli.github.com/manual/gh_release_create) (accessed 2026-08-02).
-
-For automation, provide the upgrade level, title, and mode as arguments. Version numbers are not accepted as arguments:
+For a first publication at the metadata version, use `--current` to avoid incrementing `1.0.0`. For later releases, use major/minor/patch. For example:
 
 ```bash
-./scripts/release.sh --dry-run --title "Release title" patch
-./scripts/release.sh --publish --yes --title "Release title" patch
+skill_name="replace-with-skill-name"
+./scripts/release.sh --skill "$skill_name" --current --dry-run --title "Initial release"
+./scripts/release.sh --skill "$skill_name" --current --publish --title "Initial release"
 ```
 
-Use `--yes` only to authorize the displayed version update, version commit, and publication without a final interactive confirmation.
+For a subsequent patch release:
+
+```bash
+./scripts/release.sh --skill "$skill_name" --dry-run --title "Release title" patch
+./scripts/release.sh --skill "$skill_name" --publish --title "Release title" patch
+```
+
+After publishing confirmation, the script updates only the selected Skill's version when an increment is requested, commits that `SKILL.md`, and creates its local annotated tag. `--current` and `--retry` use the metadata version without an extra version commit. Existing tags are accepted only when they point to `HEAD` and match the selected metadata version.
+
+It then checks authentication and the remote default branch, fetches tags, and rejects a newer version of the same Skill or a branch/tag conflict. It creates the ZIP from the [tagged Git subtree](https://git-scm.com/docs/git-archive), pushes the branch and selected tag, and creates a GitHub Release with the ZIP asset. Different Skills may release from the same commit. Releases are not marked as the repository-wide latest release. Tag verification and latest-selection flags follow the [GitHub CLI manual](https://cli.github.com/manual/gh_release_create) (accessed 2026-11-02).
+
+Local preparation uses the cached remote HEAD/default branch and cached tags. If that reference is missing, run `git remote set-head origin -a` while connected (substitute the configured remote when needed), then return to Validate. Fresh remote checks may still reveal conflicts after local preparation; the script stops without overwriting them.
+
+Use `--yes` only when the caller has authorized the displayed version commit and publication. Neither dry run nor this documentation authorizes publishing.
 
 ### Release recovery
 
-Stop after any publishing failure; completed local or remote steps are not automatically undone.
+Stop after a publishing failure; completed local or remote steps are retained. Use the same `--skill` and title when retrying:
 
-| Failure point | Recovery from the repository root | Resume and completion |
-| --- | --- | --- |
-| Writing or committing `VERSION` | Repair the local error and inspect the diff; with authorization, finish the version commit and restore a clean working tree | Run `./scripts/release.sh --retry` and enter the same title after completing the version commit; complete when the Release URL is reported |
-| Local tag creation after the version commit | Repair the local Git error without changing the version commit | Run `./scripts/release.sh --retry` to create the missing tag and continue |
-| Authentication, fetch, push, or Release creation after the local tag | Resolve the external error without changing `HEAD`, `VERSION`, or the tag; resolve remote conflicts explicitly before retrying | Run `./scripts/release.sh --retry` and enter the same title; an existing tag is accepted only at `HEAD`, and no extra version commit is created |
-| Release already exists | Verify the existing Release; do not overwrite or move its tag | If publication succeeded, complete; otherwise decide whether a new version is required |
+```bash
+./scripts/release.sh --skill "$skill_name" --retry --publish --title "Release title"
+```
+
+| Failure point | Repair and safe resumption |
+| --- | --- |
+| Version write or commit | Inspect the selected `SKILL.md` diff. Repair the error and, with authorization, finish its version commit and restore a clean tree; then retry without incrementing |
+| Local tag creation | Preserve the version commit, resolve the tag error without moving an existing tag, then retry |
+| Authentication, fetch, ZIP creation or push | Preserve the version commit/tag, resolve access or remote conflicts, then retry; the ZIP is regenerated from the same tag |
+| Release creation or upload | Inspect the Release for the exact Skill tag. If absent, retry. If present, verify its asset against the tagged Skill; an incomplete asset requires an explicitly authorized repair before completion |
+| Release already exists | Verify the existing release and asset. The script stops rather than overwriting it; a different content version needs a new release |
+
+Complete only when the reported Release contains the expected Skill archive. Never infer completion solely from a local version field or tag.
 
 ## License
 

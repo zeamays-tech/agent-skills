@@ -1,6 +1,8 @@
 ---
 name: documentation-governance
 description: Govern creation, modification, review, and synchronization of software project documentation. Use when working on READMEs, requirements or PRDs, architecture or HLDs, design documents, runbooks, ADRs, migration guides, changelogs, repository instructions, external-source citations, post-deployment verification, or consumer-repository instructions that invoke this Skill; especially when separating current state from decision history, resolving authority or ownership, or keeping related documents aligned.
+metadata:
+  version: "1.0.0"
 ---
 
 # Documentation Governance

@@ -1,6 +1,8 @@
 ---
 name: evidence-driven-debugging
 description: Diagnose software failures through scoped evidence, discriminating experiments, and complete-path regression checks. Use for ambiguous errors, repeated failed attempts, environment-dependent behavior, authentication or external-service failures, and disagreements between component success and final health or user outcomes. Scale down for simple reproducible defects; do not use as a general code review or project-state audit.
+metadata:
+  version: "1.0.0"
 ---
 
 # Evidence-Driven Debugging

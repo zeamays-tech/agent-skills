@@ -21,6 +21,8 @@ def read_frontmatter(path: Path):
         raise AssertionError(f"Missing frontmatter: {path}")
     values = {}
     for line in match.group(1).splitlines():
+        if line.startswith(" "):
+            continue
         key, separator, value = line.partition(":")
         if not separator:
             raise AssertionError(f"Invalid frontmatter line in {path}: {line}")
@@ -68,7 +70,7 @@ def initialize_repository(path: Path):
 class ReconcileProjectStateTests(unittest.TestCase):
     def test_skill_metadata_and_direct_references(self):
         metadata, text = read_frontmatter(SKILL / "SKILL.md")
-        self.assertEqual({"name", "description"}, set(metadata))
+        self.assertEqual({"name", "description", "metadata"}, set(metadata))
         self.assertEqual(SKILL.name, metadata["name"])
         for trigger in ("requirements", "schemas", "gate", "post-deployment", "repositories"):
             self.assertIn(trigger, metadata["description"])

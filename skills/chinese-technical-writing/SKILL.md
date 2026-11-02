@@ -1,6 +1,12 @@
 ---
 name: chinese-technical-writing
 description: 编写、修改、翻译或审校中文技术文档，包括 README、运行手册、部署说明、设计文档和验收记录时使用。从起草阶段应用自然、准确、易读的中文表达，按读者任务组织内容，避免翻译腔、长句堆叠和术语不一致；润色已有文档时保留原意和技术约束。
+metadata:
+  version: "1.0.0"
+  display_name: 中文技术文档写作
+  display_name_en: Chinese Technical Writing
+  description_zh: 编写、修改、翻译或审校中文技术文档，包括 README、运行手册、部署说明、设计文档和验收记录时使用。从起草阶段应用自然、准确、易读的中文表达，按读者任务组织内容，避免翻译腔、长句堆叠和术语不一致；润色已有文档时保留原意和技术约束。
+  description_en: Write, revise, translate, and review Chinese technical documentation, including READMEs, runbooks, deployment guides, design documents, and acceptance records. Apply clear, natural, and precise Chinese from the first draft, organize content around reader tasks, and avoid literal translations, long sentences, and inconsistent terminology. Preserve meaning and technical constraints when polishing existing documents.
 ---
 
 # 中文技术文档写作

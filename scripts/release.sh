@@ -3,6 +3,10 @@
 set -euo pipefail
 
 SCRIPT_NAME="$(basename "$0")"
+SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+SKILL_NAME=""
+SKILL_FILE=""
+TEMP_RELEASE_DIR=""
 REMOTE="origin"
 DRY_RUN=0
 ASSUME_YES=0
@@ -14,20 +18,22 @@ usage() {
 Usage:
   $SCRIPT_NAME
   $SCRIPT_NAME [--dry-run | --publish] [--title <text>] [--yes]
-               [--remote <name>] [major | minor | patch | --retry]
+               [--remote <name>] [--skill <name>] [major | minor | patch | --current | --retry]
 
-Validate and publish a repository-wide SemVer release.
+Validate and publish a single Skill SemVer release.
 
 Show the current version and prompt for an upgrade level, title, and mode.
 
 Arguments:
   major|minor|patch  Optional upgrade level; otherwise prompt (default: patch).
-                      The new version is calculated from VERSION.
+                      The new version is calculated from metadata.version.
 
 Options:
-  --retry             Resume an unfinished release using VERSION without incrementing.
+  --skill <name>      Select a Skill directory; otherwise prompt.
+  --current           Publish the current metadata.version without incrementing.
+  --retry             Resume an unfinished release using metadata.version without incrementing.
   --dry-run           Run preflight checks and print publishing commands without
-                      changing VERSION, committing, tagging, pushing, or creating a Release.
+                      changing SKILL.md, committing, tagging, pushing, or creating a Release.
   --publish           Select publishing mode without a mode prompt.
   --title <text>      Set a nonblank GitHub Release title; otherwise prompt.
   --yes               Skip the interactive publishing confirmation.
@@ -48,7 +54,10 @@ require_command() {
 cleanup() {
   local exit_code=$?
   if ((exit_code != 0)) && [[ -n "$LOCAL_RELEASE_TAG" ]]; then
-    printf 'Local release %s (VERSION commit and tag) is retained. Resolve the error, then run %s --retry with the same title.\n' "$LOCAL_RELEASE_TAG" "$SCRIPT_NAME" >&2
+    printf 'Local release %s (Skill version commit and tag) is retained. Resolve the error, then run %s --skill %s --retry with the same title.\n' "$LOCAL_RELEASE_TAG" "$SCRIPT_NAME" "$SKILL_NAME" >&2
+  fi
+  if [[ -n "$TEMP_RELEASE_DIR" ]]; then
+    rm -rf -- "$TEMP_RELEASE_DIR"
   fi
   if [[ -n "$TEMP_NPM_CACHE" ]]; then
     rm -rf -- "$TEMP_NPM_CACHE"
@@ -77,9 +86,8 @@ validate_release_tag() {
 read_release_tag() {
   local version
 
-  [[ -f VERSION ]] || die "Missing VERSION file at repository root"
-  version="$(<VERSION)"
-  validate_release_tag "v$version" || die "VERSION must contain SemVer without a leading v"
+  version="$(python3 "$SCRIPT_DIR/skill_version.py" "$SKILL_FILE")" || return 1
+  validate_release_tag "v$version" || die "metadata.version must contain SemVer without a leading v"
   printf 'v%s\n' "$version"
 }
 
@@ -106,10 +114,11 @@ PY
 check_release_tags() {
   local existing_tag
   while IFS= read -r existing_tag; do
-    if validate_release_tag "$existing_tag"; then
-      release_not_older "$1" "$existing_tag" || die "Release version must not be older than existing tag $existing_tag"
+    if validate_release_tag "${existing_tag#"$SKILL_NAME-"}"; then
+      release_not_older "${1#"$SKILL_NAME-"}" "${existing_tag#"$SKILL_NAME-"}" || die "Release version must not be older than existing tag $existing_tag"
+      git merge-base --is-ancestor "$existing_tag" HEAD || die "Skill release $existing_tag is not an ancestor of HEAD"
     fi
-  done < <(git tag --list)
+  done < <(git tag --list "$SKILL_NAME-v*")
 }
 
 next_release_tag() {
@@ -162,7 +171,8 @@ prompt_release_title() {
 }
 
 write_release_version() {
-  printf '%s\n' "${1#v}" > VERSION
+  validate_release_tag "$1" || die "Invalid version: $1"
+  python3 "$SCRIPT_DIR/skill_version.py" "$SKILL_FILE" "${1#v}"
 }
 
 prompt_release_mode() {
@@ -211,7 +221,7 @@ main() {
   local mode_option=""
   local selected_mode=""
   local repository_root remote_url repository_slug branch default_branch head tag_commit answer release_url
-  local latest_release_tag version_tag commit_count npm_cache
+  local version_tag next_version_tag npm_cache archive_path
   local tag_exists=0
   local -a release_command
 
@@ -230,7 +240,12 @@ main() {
         release_title="$2"
         shift
         ;;
-      --retry)
+      --skill)
+        (($# >= 2)) || die "--skill requires a value"
+        SKILL_NAME="$2"
+        shift
+        ;;
+      --retry | --current)
         retry=1
         ;;
       --yes)
@@ -259,7 +274,7 @@ main() {
     shift
   done
 
-  [[ "$retry" == 0 || -z "$bump" ]] || die "--retry cannot be combined with an upgrade level"
+  [[ "$retry" == 0 || -z "$bump" ]] || die "--retry/--current cannot be combined with an upgrade level"
   [[ -z "$release_title" || -n "${release_title//[[:space:]]/}" ]] || die "Release title must not be blank"
   [[ "$REMOTE" =~ ^[A-Za-z0-9._-]+$ ]] || die "Invalid remote name: $REMOTE"
 
@@ -268,20 +283,32 @@ main() {
   cd "$repository_root"
 
   require_command python3
+  if [[ -z "$SKILL_NAME" ]]; then
+    printf 'Available Skills:\n' >&2
+    for skill_path in skills/*/SKILL.md; do
+      [[ -f "$skill_path" ]] && printf '  %s\n' "${skill_path%/SKILL.md}" >&2
+    done
+    printf 'Skill name: ' >&2
+    IFS= read -r SKILL_NAME || die "Skill input ended unexpectedly"
+  fi
+  [[ "$SKILL_NAME" =~ ^[a-z0-9]+(-[a-z0-9]+)*$ ]] || die "Invalid Skill name"
+  SKILL_FILE="skills/$SKILL_NAME/SKILL.md"
+  [[ -f "$SKILL_FILE" && ! -L "$SKILL_FILE" && ! -L "skills/$SKILL_NAME" ]] || die "Skill not found or is a symlink: $SKILL_NAME"
   version_tag="$(read_release_tag)" || exit 1
   printf '\nInteractive release setup\n' >&2
-  printf 'Current version (VERSION): %s\n' "${version_tag#v}" >&2
+  printf 'Current version (%s): %s\n' "$SKILL_NAME" "${version_tag#v}" >&2
   if ((retry == 1)); then
-    release_tag="$version_tag"
-    printf 'Retrying unfinished release: %s\n' "$release_tag" >&2
+    next_version_tag="$version_tag"
+    printf 'Using current Skill version: %s\n' "$SKILL_NAME-$next_version_tag" >&2
   else
     if [[ -z "$bump" ]]; then
       bump="$(prompt_release_bump "$version_tag")"
     fi
-    release_tag="$(next_release_tag "$version_tag" "$bump")"
-    printf 'New version (%s): %s\n' "$bump" "${release_tag#v}" >&2
+    next_version_tag="$(next_release_tag "$version_tag" "$bump")"
+    printf 'New version (%s): %s\n' "$bump" "${next_version_tag#v}" >&2
   fi
-  release_not_older "$release_tag" "$version_tag" || die "Release version must not be older than VERSION ($version_tag)"
+  release_not_older "$next_version_tag" "$version_tag" || die "Release version must not be older than metadata.version ($version_tag)"
+  release_tag="$SKILL_NAME-$next_version_tag"
   if [[ -z "$release_title" ]]; then
     release_title="$(prompt_release_title)"
   fi
@@ -333,7 +360,7 @@ main() {
   if git show-ref --verify --quiet "refs/tags/$release_tag"; then
     tag_commit="$(git rev-list -n 1 "$release_tag")"
     [[ "$tag_commit" == "$head" ]] || die "Existing tag $release_tag does not point to HEAD"
-    [[ "$release_tag" == "$version_tag" ]] || die "Existing tag does not match VERSION; cannot change a tagged release"
+    [[ "$next_version_tag" == "$version_tag" ]] || die "Existing tag does not match metadata.version; cannot change a tagged release"
     tag_exists=1
   fi
 
@@ -345,18 +372,20 @@ main() {
     npm_cache="$TEMP_NPM_CACHE"
   fi
   printf 'Validating Skill discovery (npx may download the CLI)...\n' >&2
-  npm_config_cache="$npm_cache" npx --yes skills@latest add . --list
+  npm_config_cache="$npm_cache" npx --yes skills@latest add "./skills/$SKILL_NAME" --list
   [[ -z "$(git status --porcelain=v1 --untracked-files=all)" ]] || die "Validation changed the working tree; review it before release"
 
   printf '\nRelease plan\n'
   printf '  Repository: %s\n' "$repository_slug"
   printf '  Branch:     %s\n' "$branch"
   printf '  Base commit: %s\n' "$head"
-  printf '  VERSION:    %s -> %s\n' "${version_tag#v}" "${release_tag#v}"
-  if [[ "$release_tag" != "$version_tag" ]]; then
-    printf '  Version update: write VERSION and commit chore(release): %s\n' "$release_tag"
+  printf '  Skill:      %s\n' "$SKILL_NAME"
+  printf '  Version:    %s -> %s\n' "${version_tag#v}" "${next_version_tag#v}"
+  if [[ "$next_version_tag" != "$version_tag" ]]; then
+    printf '  Version update: update selected SKILL.md and commit chore(release): %s\n' "$release_tag"
   fi
   printf '  Tag:        %s\n' "$release_tag"
+  printf '  Asset:      %s.zip\n' "$release_tag"
   printf '  Title:      %s\n' "$release_title"
   printf '  Mode:       %s\n' "$([[ "$DRY_RUN" -eq 1 ]] && printf 'dry run' || printf 'publish')"
 
@@ -366,12 +395,12 @@ main() {
     [[ "$answer" == "y" || "$answer" == "Y" ]] || die "Release cancelled"
   fi
 
-  if [[ "$release_tag" != "$version_tag" ]]; then
-    run_mutation write_release_version "$release_tag"
-    run_mutation git add -- VERSION
-    run_mutation git commit -m "chore(release): $release_tag" -- VERSION
+  if [[ "$next_version_tag" != "$version_tag" ]]; then
+    run_mutation write_release_version "$next_version_tag"
+    run_mutation git add -- "$SKILL_FILE"
+    run_mutation git commit -m "chore(release): $release_tag" -- "$SKILL_FILE"
     if ((DRY_RUN == 0)); then
-      [[ "$(read_release_tag)" == "$release_tag" ]] || die "VERSION changed during commit; review before retrying"
+      [[ "$(read_release_tag)" == "$next_version_tag" ]] || die "metadata.version changed during commit; review before retrying"
       [[ -z "$(git status --porcelain=v1 --untracked-files=all)" ]] || die "Commit left local changes; review before retrying"
     fi
   fi
@@ -381,13 +410,13 @@ main() {
   fi
 
   if ((DRY_RUN == 1)); then
-    printf '\nDry run complete; local validation passed. VERSION, commits, and tags are unchanged. Remote checks and publication were not run.\n'
+    printf '\nDry run complete; local validation passed. SKILL.md, commits, and tags are unchanged. Remote checks and publication were not run.\n'
     return 0
   fi
 
   LOCAL_RELEASE_TAG="$release_tag"
   head="$(git rev-parse HEAD)"
-  printf '\nLocal release ready: %s at %s (VERSION commit and tag).\n' "$release_tag" "$head"
+  printf '\nLocal release ready: %s at %s (Skill version commit and tag).\n' "$release_tag" "$head"
   printf 'Checking GitHub authentication...\n' >&2
   gh auth status --hostname github.com >/dev/null
   printf 'Reading GitHub default branch...\n' >&2
@@ -399,34 +428,27 @@ main() {
   git fetch --progress "$REMOTE" --tags
   git merge-base --is-ancestor "$REMOTE/$default_branch" HEAD || die "Local $branch is behind or diverged from $REMOTE/$default_branch"
   check_release_tags "$release_tag"
-  printf 'Reading latest GitHub release...\n' >&2
-  latest_release_tag="$(gh release list --repo "$repository_slug" --limit 1 --json tagName --jq '.[0].tagName // ""')"
-  printf 'Latest GitHub release: %s\n' "${latest_release_tag:-none}" >&2
-
   printf 'Checking whether GitHub Release %s already exists...\n' "$release_tag" >&2
   if gh release view "$release_tag" --repo "$repository_slug" >/dev/null 2>&1; then
     die "GitHub Release $release_tag already exists; choose a new version"
   fi
 
-  if [[ -n "$latest_release_tag" ]]; then
-    git show-ref --verify --quiet "refs/tags/$latest_release_tag" || die "Latest release tag is missing locally after fetch: $latest_release_tag"
-    git merge-base --is-ancestor "$latest_release_tag" HEAD || die "Latest release $latest_release_tag is not an ancestor of HEAD"
-    commit_count="$(git rev-list --count "$latest_release_tag..HEAD")"
-    ((commit_count > 0)) || die "No commits exist after the latest release ($latest_release_tag)"
-  fi
+  TEMP_RELEASE_DIR="$(mktemp -d "${TMPDIR:-/tmp}/agent-skill-release.XXXXXX")"
+  archive_path="$TEMP_RELEASE_DIR/$release_tag.zip"
+  git archive --format=zip --prefix="$SKILL_NAME/" --output="$archive_path" "$release_tag:skills/$SKILL_NAME"
 
   run_mutation git push "$REMOTE" "HEAD:refs/heads/$default_branch"
   run_mutation git push "$REMOTE" "refs/tags/$release_tag"
 
   release_command=(
-    gh release create "$release_tag"
+    gh release create "$release_tag" "$archive_path"
     --title "$release_title"
-    --generate-notes
+    --notes "Release $SKILL_NAME ${next_version_tag#v}. Source: https://github.com/$repository_slug/tree/$release_tag/skills/$SKILL_NAME . The attached ZIP contains this Skill only."
     --verify-tag
-    --fail-on-no-commits
+    --latest=false
     --repo "$repository_slug"
   )
-  if [[ "${release_tag%%+*}" == *-* ]]; then
+  if [[ "${next_version_tag%%+*}" == *-* ]]; then
     release_command+=(--prerelease)
   fi
   run_mutation "${release_command[@]}"
