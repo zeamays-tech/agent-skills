@@ -14,7 +14,7 @@ Maintain open, versioned, and portable Agent Skills for AI coding agents. Keep e
 - Keep repository-level installation, version selection, and catalog guidance in the root `README.md`.
 - Keep installed-Skill invocation and consumer `AGENTS.md` integration guidance in `SKILL.md` or a directly linked file under `references/`.
 - Keep durable repository decisions in `docs/decisions/`.
-- Keep each Skill version in its `SKILL.md` under `metadata.version` as a quoted SemVer string. Use a block-style `metadata` mapping and two spaces before `version` so release tooling can replace only that value. Publish one Skill at a time with tag `<skill-name>-v<version>` and an archive from that tagged Skill directory. Update and commit only the selected `SKILL.md` during an authorized version increment. Preserve historical tags and releases; a metadata value alone is not proof of publication.
+- Keep each Skill version in its `SKILL.md` under `metadata.version` as a quoted SemVer string. Use a block-style `metadata` mapping and two spaces before `version` so release tooling can replace only that value. Publish one Skill at a time with tag `<skill-name>-v<version>` and an archive from that tagged Skill directory. Update and commit only the selected `SKILL.md` during an authorized version increment. Preserve published tags and releases unless the maintainer explicitly authorizes retirement; record an authorized retirement in the decision history and synchronize installation guidance. A metadata value alone is not proof of publication.
 - Treat repository-local ownership or document maps as authoritative when they are added later.
 
 ## Skill changes

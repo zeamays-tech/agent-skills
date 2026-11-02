@@ -100,7 +100,7 @@ Version increments affect only the selected Skill. Read its metadata for the pre
 
 Choose increments using [Semantic Versioning](https://semver.org/): patch for compatible fixes, minor for compatible capabilities, and major for breaking behavior or usage changes. The release script offers major/minor/patch, calculates the result, and removes any prerelease/build suffix when incrementing. It compares versions only against tags for the selected Skill. Existing tags and published assets remain immutable.
 
-Install a specific version using the [tagged installation command](#install-a-specific-release). Writing a version in metadata does not create a downloadable release. Previously published repository-wide tags remain usable through their original URLs; use the exact historical tag when installing an old snapshot.
+Install a specific version using the [tagged installation command](#install-a-specific-release). Writing a version in metadata does not create a downloadable release. Choose an available Skill-specific tag from the [Releases page](https://github.com/zeamays-tech/agent-skills/releases). For an installation pinned to an unavailable tag, select a published Skill version and rerun the tagged installation command.
 
 ## Release
 

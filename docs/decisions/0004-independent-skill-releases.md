@@ -18,7 +18,7 @@ Allow publishing the current version for the initial `1.0.0` releases and retryi
 ## Migration and consequences
 
 - Remove the root `VERSION` file. All four current Skills use `metadata.version: "1.0.0"` as the start of their independent sequence; this is not a claim that these releases are already published.
-- Preserve old `v*` tags, GitHub Releases and pinned installation URLs. Do not retag or rewrite their content.
+- The initial migration retained old `v*` tags, GitHub Releases and pinned installation URLs. That retention decision was superseded by the [retirement amendment](#retirement-amendment-2026-11-02).
 - This decision supersedes the shared-version rule in [the distribution decision](0001-open-agent-skills-primary-distribution.md) and the [version-file decision](0003-track-repository-version-in-file.md). The open repository remains the primary publication source.
 - Keep platform-required metadata transformations in derived packages. Such packages do not replace the portable source or define a separate Skill content version.
 - A metadata value is prepared state. Publication is established by the matching tag, Release and asset. A failed upload may require inspecting and repairing an incomplete Release with explicit authorization.
@@ -27,3 +27,11 @@ Allow publishing the current version for the initial `1.0.0` releases and retryi
 ## Alternatives considered
 
 Retaining shared repository versions would keep the old release script but continue coupling independent Skills. Maintaining only Git commit references would support pinning, but would not meet the selected independent semantic-version publication workflow.
+
+## Retirement amendment: 2026-11-02
+
+After publishing the four independent `1.0.0` releases, the maintainer authorized and completed removal of the repository-wide releases and tags. This supersedes the initial migration's retention decision, without changing the independent versioning scheme.
+
+Read-only verification with `git ls-remote --tags --refs origin` and `gh release list --limit 100 --json tagName` found only the four Skill-specific `*-v1.0.0` tags and Releases. The retired tags are `v0.1.0`, `v0.2.0`, `v0.2.1`, `v0.3.0`, `v0.4.0`, `v0.5.0`, `v0.6.0`, and `v0.7.0`; six had corresponding Releases. This check confirms their removal, not the contents or installability of the retained release assets.
+
+The retired tag URLs and release downloads are no longer installation sources. Existing installed copies are not removed, but consumers must select an available Skill-specific release when reinstalling or changing a retired pin. Current installation instructions remain in the [README](../../README.md#install-a-specific-release).
