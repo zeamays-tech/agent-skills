@@ -11,6 +11,7 @@ This repository publishes Skills in the lightweight [Agent Skills open format](h
 | [`documentation-governance`](skills/documentation-governance/SKILL.md) | Create, modify, review, and synchronize software documentation while separating current guidance from decision and migration history. |
 | [`chinese-technical-writing`](skills/chinese-technical-writing/SKILL.md) | Write, update, translate, and review Chinese technical documentation with clear, natural expression from the first draft, grounded in project facts and reader needs. |
 | [`reconcile-project-state`](skills/reconcile-project-state/SKILL.md) | Discover, audit, correct within authorization, and gate inconsistencies across intended, executable, and evidence state. |
+| [`evidence-driven-debugging`](skills/evidence-driven-debugging/SKILL.md) | Diagnose ambiguous failures with informative experiments, fewer manual retries, and regression checks across the complete result path. |
 
 ## Install
 
@@ -77,6 +78,7 @@ A selected Skill may be installed without this repository README. Each Skill the
 - [`documentation-governance` consumer integration](skills/documentation-governance/references/consumer-integration.md)
 - [`chinese-technical-writing` invocation and consumer integration](skills/chinese-technical-writing/SKILL.md#调用与接入)
 - [`reconcile-project-state` consumer integration](skills/reconcile-project-state/references/consumer-integration.md)
+- [`evidence-driven-debugging` invocation and consumer integration](skills/evidence-driven-debugging/SKILL.md#invoke-and-integrate)
 
 Treat the installed Skill's `SKILL.md` and directly linked references as the usage authority available to both agents and people after installation.
 
